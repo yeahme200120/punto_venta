@@ -1,0 +1,10 @@
+2026-06-04 01:57:57 - UPDATE LLAMADO
+URL: http://127.0.0.1:8000/productos/11
+Method: PUT
+ID Producto: 11
+
+2026-06-04 02:00:06 - UPDATE LLAMADO
+URL: http://127.0.0.1:8000/productos/11
+Method: PUT
+ID Producto: 11
+
