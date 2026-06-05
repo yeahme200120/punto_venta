@@ -8,7 +8,7 @@
         <span class="text-gray-400">/</span>
     </li>
     <li>
-        <a href="{{ route('cajas.index') }}" class="text-gray-500 transition-colors hover:text-indigo-600">
+        <a href="{{ route('cajas.cajas.index') }}" class="text-gray-500 transition-colors hover:text-indigo-600">
             Cajas
         </a>
     </li>
@@ -38,7 +38,7 @@
             <p class="text-sm text-gray-500">Monto inicial: <span class="font-semibold text-green-600">${{ number_format($aperturaActual->monto_inicial, 2) }}</span></p>
         </div>
         <div class="flex justify-center gap-3 mt-6">
-            <a href="{{ route('cajas.operaciones') }}" class="px-6 py-2 text-white transition bg-indigo-600 rounded-xl hover:bg-indigo-700">
+            <a href="{{ route('caja.operaciones') }}" class="px-6 py-2 text-white transition bg-indigo-600 rounded-xl hover:bg-indigo-700">
                 Ir a operaciones
             </a>
             <button type="button" onclick="mostrarModalCierre({{ $aperturaActual->id }})" 
@@ -52,7 +52,7 @@
     <div id="modalCierre" class="fixed inset-0 z-50 items-center justify-center hidden bg-black/50">
         <div class="w-full max-w-md p-6 bg-white rounded-2xl">
             <h3 class="mb-4 text-xl font-bold">Cerrar caja</h3>
-            <form action="{{ route('cajas.cerrar') }}" method="POST">
+            <form action="{{ route('caja.cerrar') }}" method="POST">
                 @csrf
                 <input type="hidden" name="apertura_id" id="apertura_id">
                 <div class="mb-4">

@@ -8,7 +8,7 @@
         <span class="text-gray-400">/</span>
     </li>
     <li>
-        <a href="{{ route('cajas.index') }}" class="text-gray-500 transition-colors hover:text-indigo-600">
+        <a href="{{ route('cajas.cajas.index') }}" class="text-gray-500 transition-colors hover:text-indigo-600">
             Cajas
         </a>
     </li>
@@ -81,7 +81,7 @@
             </div>
 
             <div class="flex justify-end gap-4 pt-6 border-t">
-                <a href="{{ route('cajas.index') }}" class="px-6 py-3 font-medium transition border-2 border-slate-300 rounded-xl text-slate-600 hover:bg-slate-50">Cancelar</a>
+                <a href="{{ route('cajas.cajas.index') }}" class="px-6 py-3 font-medium transition border-2 border-slate-300 rounded-xl text-slate-600 hover:bg-slate-50">Cancelar</a>
                 <button type="submit" class="px-8 py-3 font-semibold text-white transition shadow-lg bg-gradient-to-r from-blue-600 to-cyan-500 rounded-xl hover:from-blue-700 hover:to-cyan-600">
                     🔄 Solicitar transferencia
                 </button>

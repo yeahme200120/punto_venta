@@ -8,7 +8,7 @@
         <span class="text-gray-400">/</span>
     </li>
     <li>
-        <a href="{{ route('cajas.index') }}" class="text-gray-500 transition-colors hover:text-indigo-600">
+        <a href="{{ route('cajas.cajas.index') }}" class="text-gray-500 transition-colors hover:text-indigo-600">
             Cajas
         </a>
     </li>
