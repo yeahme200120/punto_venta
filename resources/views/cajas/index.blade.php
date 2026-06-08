@@ -1,4 +1,3 @@
-{{-- resources/views/cajas/index.blade.php --}}
 @extends('layouts.app')
 
 @section('title', 'Cajas')
@@ -21,12 +20,20 @@
     <div class="flex items-center gap-2">
         <span class="text-sm text-gray-400">Mostrando {{ $cajas->count() }} de {{ $cajas->total() }} cajas</span>
     </div>
-    @if(auth()->user()->hasRole(['Super Admin', 'Administrador']))
-    <a href="{{ route('cajas.cajas.create') }}" 
-        class="px-4 py-2 text-sm font-medium text-white transition shadow bg-gradient-to-r from-indigo-600 to-cyan-500 rounded-xl hover:from-indigo-700 hover:to-cyan-600">
-        + Nueva caja
-    </a>
-    @endif
+    <div class="flex gap-2">
+        @can('ver_dashboard_caja')
+        <a href="{{ route('dashboard.caja') }}" 
+            class="px-4 py-2 text-sm font-medium text-white transition shadow bg-gradient-to-r from-emerald-600 to-teal-500 rounded-xl hover:from-emerald-700 hover:to-teal-600">
+            📊 Dashboard
+        </a>
+        @endcan
+        @can('crear_caja')
+        <a href="{{ route('cajas.cajas.create') }}" 
+            class="px-4 py-2 text-sm font-medium text-white transition shadow bg-gradient-to-r from-indigo-600 to-cyan-500 rounded-xl hover:from-indigo-700 hover:to-cyan-600">
+            + Nueva caja
+        </a>
+        @endcan
+    </div>
 </div>
 
 <div class="overflow-hidden bg-white shadow-lg rounded-3xl">
@@ -82,24 +89,28 @@
                     </td>
                     <td class="px-6 py-4">
                         <div class="flex items-center justify-end gap-2">
+                            @can('editar_caja')
                             <a href="{{ route('cajas.cajas.edit', $caja) }}" class="p-2 text-gray-400 transition hover:text-amber-600" title="Editar">
                                 ✏️
                             </a>
-                            @if($caja->aperturaActual)
-                            <a href="{{ route('cajas.cajas.reporte.dia', $caja->aperturaActual->id) }}" class="p-2 text-gray-400 transition hover:text-indigo-600" title="Reporte">
+                            @endcan
+                            @if($caja->aperturaActual && auth()->user()->can('ver_reporte_caja_diario'))
+                            <a href="{{ route('cajas.reporte.dia', ['aperturaId' => $caja->aperturaActual->id]) }}" class="p-2 text-gray-400 transition hover:text-indigo-600" title="Reporte">
                                 📊
                             </a>
                             @endif
                         </div>
                     </td>
-                </tr>
+                 </tr>
                 @empty
                 <tr>
                     <td colspan="7" class="px-6 py-12 text-center text-gray-400">
                         No hay cajas registradas
+                        @can('crear_caja')
                         <div class="mt-2">
                             <a href="{{ route('cajas.cajas.create') }}" class="text-indigo-600 hover:text-indigo-800">+ Crear primera caja</a>
                         </div>
+                        @endcan
                     </td>
                 </tr>
                 @endforelse

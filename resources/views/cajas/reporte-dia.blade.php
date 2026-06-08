@@ -8,7 +8,7 @@
         <span class="text-gray-400">/</span>
     </li>
     <li>
-        <a href="{{ route('cajas.index') }}" class="text-gray-500 transition-colors hover:text-indigo-600">
+        <a href="{{ route('cajas.cajas.index') }}" class="text-gray-500 transition-colors hover:text-indigo-600">
             Cajas
         </a>
     </li>
@@ -31,47 +31,85 @@
             <p class="text-gray-500">{{ $resumen['fecha'] }}</p>
             <p class="text-sm text-gray-400">Caja: {{ $apertura->caja->nombre }} ({{ $apertura->caja->codigo }})</p>
             <p class="text-sm text-gray-400">Usuario: {{ $apertura->usuario->name }}</p>
+            <p class="text-sm text-gray-400">Sucursal: {{ $apertura->sucursal->nombre ?? 'N/A' }}</p>
         </div>
 
+        {{-- Totales principales --}}
         <div class="grid grid-cols-2 gap-4 mb-8 md:grid-cols-4">
             <div class="p-4 text-center bg-green-50 rounded-xl">
-                <p class="text-2xl font-bold text-green-600">${{ number_format($resumen['apertura'], 2) }}</p>
+                <p class="text-2xl font-bold text-green-600">${{ number_format(floatval($resumen['apertura']), 2) }}</p>
                 <p class="text-xs text-gray-500">Apertura</p>
             </div>
             <div class="p-4 text-center bg-blue-50 rounded-xl">
-                <p class="text-2xl font-bold text-blue-600">+ ${{ number_format($resumen['total_ingresos'], 2) }}</p>
+                <p class="text-2xl font-bold text-blue-600">+ ${{ number_format(floatval($resumen['total_ingresos']), 2) }}</p>
                 <p class="text-xs text-gray-500">Ingresos</p>
             </div>
             <div class="p-4 text-center bg-red-50 rounded-xl">
-                <p class="text-2xl font-bold text-red-600">- ${{ number_format($resumen['total_egresos'], 2) }}</p>
+                <p class="text-2xl font-bold text-red-600">- ${{ number_format(floatval($resumen['total_egresos']), 2) }}</p>
                 <p class="text-xs text-gray-500">Egresos</p>
             </div>
             <div class="p-4 text-center bg-indigo-50 rounded-xl">
-                <p class="text-2xl font-bold text-indigo-600">${{ number_format($resumen['saldo_esperado'], 2) }}</p>
+                <p class="text-2xl font-bold text-indigo-600">${{ number_format(floatval($resumen['saldo_esperado']), 2) }}</p>
                 <p class="text-xs text-gray-500">Saldo Esperado</p>
             </div>
         </div>
 
-        {{-- Formas de pago --}}
+        {{-- Formas de pago - Dinámico --}}
         <div class="mb-8">
             <h3 class="mb-4 text-lg font-bold text-slate-800">💰 Desglose por forma de pago</h3>
-            <div class="grid grid-cols-2 gap-3 md:grid-cols-3">
+            <div class="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
                 @foreach($resumen['por_forma_pago'] as $forma => $monto)
-                <div class="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
-                    <span class="text-sm capitalize">
-                        @switch($forma)
-                            @case('efectivo') 💵 Efectivo @break
-                            @case('tarjeta_debito') 💳 Tarjeta Débito @break
-                            @case('tarjeta_credito') 💎 Tarjeta Crédito @break
-                            @case('vale') 🎫 Vale @break
-                            @case('transferencia') 🏦 Transferencia @break
-                            @case('cheque') 📄 Cheque @break
-                            @default {{ $forma }}
-                        @endswitch
-                    </span>
-                    <span class="font-semibold">${{ number_format($monto, 2) }}</span>
-                </div>
+                    @if($monto > 0)
+                    <div class="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
+                        <span class="text-sm capitalize">
+                            @php
+                                // Buscar icono de la forma de pago en la colección de formasPago
+                                $icono = '💰';
+                                $formaNombre = ucfirst(str_replace('_', ' ', $forma));
+                                if(isset($formasPago) && $formasPago->count() > 0) {
+                                    $formaPagoObj = $formasPago->firstWhere('clave', $forma);
+                                    if($formaPagoObj && $formaPagoObj->icono) {
+                                        $icono = $formaPagoObj->icono;
+                                        $formaNombre = $formaPagoObj->nombre;
+                                    }
+                                }
+                            @endphp
+                            {!! $icono !!} {{ $formaNombre }}
+                        </span>
+                        <span class="font-semibold">${{ number_format($monto, 2) }}</span>
+                    </div>
+                    @endif
                 @endforeach
+            </div>
+        </div>
+
+        {{-- Resumen adicional --}}
+        <div class="grid grid-cols-1 gap-4 mb-8 md:grid-cols-2">
+            <div class="p-4 bg-purple-50 rounded-xl">
+                <h4 class="font-semibold text-purple-800">📈 Promedios</h4>
+                <div class="mt-2 space-y-1">
+                    <div class="flex justify-between text-sm">
+                        <span>Ticket promedio:</span>
+                        <span class="font-bold">${{ number_format($resumen['promedio_venta'] ?? 0, 2) }}</span>
+                    </div>
+                    <div class="flex justify-between text-sm">
+                        <span>Ingreso promedio:</span>
+                        <span class="font-bold">${{ number_format($resumen['promedio_ingreso'] ?? 0, 2) }}</span>
+                    </div>
+                </div>
+            </div>
+            <div class="p-4 bg-orange-50 rounded-xl">
+                <h4 class="font-semibold text-orange-800">📊 Estadísticas</h4>
+                <div class="mt-2 space-y-1">
+                    <div class="flex justify-between text-sm">
+                        <span>Total transacciones:</span>
+                        <span class="font-bold">{{ $resumen['total_transacciones'] ?? 0 }}</span>
+                    </div>
+                    <div class="flex justify-between text-sm">
+                        <span>Total clientes:</span>
+                        <span class="font-bold">{{ $resumen['total_clientes'] ?? 0 }}</span>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -89,15 +127,18 @@
                             <p class="text-sm font-medium">{{ $mov->concepto }}</p>
                             <p class="text-xs text-gray-500">
                                 {{ $mov->categoria }} • 
-                                @switch($mov->forma_pago)
-                                    @case('efectivo') 💵 Efectivo @break
-                                    @case('tarjeta_debito') 💳 Tarjeta Débito @break
-                                    @case('tarjeta_credito') 💎 Tarjeta Crédito @break
-                                    @case('vale') 🎫 Vale @break
-                                    @case('transferencia') 🏦 Transferencia @break
-                                    @case('cheque') 📄 Cheque @break
-                                    @default {{ $mov->forma_pago }}
-                                @endswitch
+                                @php
+                                    $iconoMov = '💰';
+                                    $nombreMov = $mov->forma_pago;
+                                    if(isset($formasPago) && $formasPago->count() > 0) {
+                                        $formaPagoObj = $formasPago->firstWhere('clave', $mov->forma_pago);
+                                        if($formaPagoObj && $formaPagoObj->icono) {
+                                            $iconoMov = $formaPagoObj->icono;
+                                            $nombreMov = $formaPagoObj->nombre;
+                                        }
+                                    }
+                                @endphp
+                                {!! $iconoMov !!} {{ $nombreMov }}
                                 @if($mov->referencia) • Ref: {{ $mov->referencia }} @endif
                             </p>
                         </div>

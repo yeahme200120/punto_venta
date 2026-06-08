@@ -2,7 +2,6 @@
     
     {{-- Título y botón móvil --}}
     <div class="flex items-center gap-3">
-        {{-- Botón para móvil (toggle sidebar) --}}
         <button @click="toggleMobileSidebar()" 
                 class="p-2 transition-colors rounded-lg md:hidden hover:bg-slate-100">
             <svg class="w-6 h-6 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -21,6 +20,18 @@
     </div>
 
     <div class="flex items-center gap-2 md:gap-4">
+
+        {{-- ICONO DEL CARRITO --}}
+        <a href="{{ route('ventas.index') }}" 
+           class="relative p-2 transition-all duration-200 bg-slate-100 rounded-xl hover:bg-slate-200 group">
+            <svg class="w-5 h-5 text-slate-600 group-hover:text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-1.5 6M17 13l1.5 6M9 21h6M12 18v3"></path>
+            </svg>
+            <span id="cartCount" 
+                  class="absolute flex items-center justify-center w-5 h-5 text-xs font-bold text-white transition-all duration-300 scale-0 bg-red-500 rounded-full shadow-md -top-2 -right-2">
+                0
+            </span>
+        </a>
 
         {{-- SELECTOR DE EMPRESA (SOLO SUPER ADMIN) --}}
         @if(auth()->user()->hasRole('Super Admin'))
@@ -159,13 +170,11 @@
         <div class="relative" x-data="{ openUser: false }">
             <button @click="openUser = !openUser"
                     class="flex items-center gap-2 p-2 transition-all duration-200 hover:bg-slate-100 rounded-xl">
-                {{-- Solo el ícono del usuario --}}
                 <div class="flex items-center justify-center font-bold text-white rounded-full shadow-md w-9 h-9 bg-gradient-to-br from-indigo-600 to-cyan-500">
                     {{ strtoupper(substr(auth()->user()->name, 0, 1)) }}
                 </div>
             </button>
 
-            {{-- Dropdown de usuario simplificado --}}
             <div x-show="openUser" 
                  x-cloak
                  @click.away="openUser = false"
@@ -177,7 +186,6 @@
                  x-transition:leave-end="opacity-0 transform -translate-y-2"
                  class="absolute right-0 z-50 mt-3 overflow-hidden bg-white border shadow-2xl w-72 rounded-2xl">
                 
-                {{-- Header del usuario --}}
                 <div class="px-4 py-4 text-white bg-gradient-to-r from-indigo-600 to-cyan-500">
                     <div class="flex items-center gap-3">
                         <div class="flex items-center justify-center w-12 h-12 text-xl font-bold rounded-full shadow-lg bg-white/20 backdrop-blur">
@@ -190,7 +198,6 @@
                     </div>
                 </div>
 
-                {{-- Información del usuario --}}
                 <div class="px-4 py-3 border-b bg-slate-50">
                     <div class="grid grid-cols-2 gap-3 text-sm">
                         <div>
@@ -208,7 +215,6 @@
                     </div>
                 </div>
 
-                {{-- Opción de perfil --}}
                 <div class="py-2">
                     <a href="{{ route('usuarios.edit', auth()->user()) }}" 
                        class="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-indigo-50 group">
@@ -227,7 +233,6 @@
                     </a>
                 </div>
 
-                {{-- Cerrar sesión --}}
                 <div class="px-4 py-3 border-t bg-slate-50">
                     <form method="POST" action="{{ route('logout') }}">
                         @csrf
@@ -251,17 +256,56 @@
     </div>
 </header>
 
+<script>
+// Función para actualizar el contador del carrito
+async function actualizarContadorCarrito() {
+    try {
+        const response = await axios.get('{{ route("carrito.obtener") }}');
+        if (response.data.success) {
+            const items = response.data.items || [];
+            const totalItems = items.reduce((sum, item) => sum + (parseInt(item.cantidad) || 0), 0);
+            const cartCountSpan = document.getElementById('cartCount');
+            
+            if (cartCountSpan) {
+                if (totalItems > 0) {
+                    cartCountSpan.textContent = totalItems > 99 ? '99+' : totalItems;
+                    cartCountSpan.classList.remove('scale-0');
+                    cartCountSpan.classList.add('scale-100');
+                } else {
+                    cartCountSpan.classList.remove('scale-100');
+                    cartCountSpan.classList.add('scale-0');
+                }
+            }
+        }
+    } catch (error) {
+        console.error('Error al obtener carrito:', error);
+    }
+}
+
+// Hacer la función global para que pueda ser llamada desde otras páginas
+window.actualizarContadorCarrito = actualizarContadorCarrito;
+
+// Escuchar evento personalizado cuando se modifica el carrito
+window.addEventListener('carrito-actualizado', () => {
+    console.log('Evento carrito-actualizado recibido');
+    actualizarContadorCarrito();
+});
+
+// Actualizar al cargar la página
+document.addEventListener('DOMContentLoaded', () => {
+    actualizarContadorCarrito();
+});
+</script>
+
 <style>
 [x-cloak] { display: none !important; }
 
-/* Animaciones suaves */
 .transition-all {
     transition-property: all;
     transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
     transition-duration: 150ms;
 }
 
-/* Scrollbar personalizada para dropdowns */
 .overflow-y-auto::-webkit-scrollbar {
     width: 6px;
 }
@@ -278,5 +322,18 @@
 
 .overflow-y-auto::-webkit-scrollbar-thumb:hover {
     background: #94a3b8;
+}
+
+/* Animación del contador */
+.scale-0 {
+    transform: scale(0);
+}
+
+.scale-100 {
+    transform: scale(1);
+}
+
+#cartCount {
+    transition: transform 0.2s ease-in-out;
 }
 </style>

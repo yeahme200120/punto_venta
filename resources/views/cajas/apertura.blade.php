@@ -1,4 +1,3 @@
-{{-- resources/views/cajas/apertura.blade.php --}}
 @extends('layouts.app')
 
 @section('title', 'Apertura de Caja')
@@ -27,7 +26,6 @@
 
 <div class="max-w-3xl mx-auto">
     @if($aperturaActual)
-    {{-- Caja actualmente abierta --}}
     <div class="p-8 mb-6 text-center border border-green-200 bg-green-50 rounded-3xl">
         <div class="mb-4 text-5xl">💰</div>
         <h3 class="mb-2 text-xl font-bold text-green-800">Caja Abierta</h3>
@@ -38,7 +36,7 @@
             <p class="text-sm text-gray-500">Monto inicial: <span class="font-semibold text-green-600">${{ number_format($aperturaActual->monto_inicial, 2) }}</span></p>
         </div>
         <div class="flex justify-center gap-3 mt-6">
-            <a href="{{ route('caja.operaciones') }}" class="px-6 py-2 text-white transition bg-indigo-600 rounded-xl hover:bg-indigo-700">
+            <a href="{{ route('cajas.operaciones') }}" class="px-6 py-2 text-white transition bg-indigo-600 rounded-xl hover:bg-indigo-700">
                 Ir a operaciones
             </a>
             <button type="button" onclick="mostrarModalCierre({{ $aperturaActual->id }})" 
@@ -48,11 +46,10 @@
         </div>
     </div>
 
-    {{-- Modal de cierre --}}
     <div id="modalCierre" class="fixed inset-0 z-50 items-center justify-center hidden bg-black/50">
         <div class="w-full max-w-md p-6 bg-white rounded-2xl">
             <h3 class="mb-4 text-xl font-bold">Cerrar caja</h3>
-            <form action="{{ route('caja.cerrar') }}" method="POST">
+            <form action="{{ route('cajas.cerrar') }}" method="POST">
                 @csrf
                 <input type="hidden" name="apertura_id" id="apertura_id">
                 <div class="mb-4">
@@ -73,7 +70,6 @@
     </div>
 
     @elseif($aperturaAnterior)
-    {{-- Caja de días anteriores abierta --}}
     <div class="p-8 mb-6 text-center border border-yellow-200 bg-yellow-50 rounded-3xl">
         <div class="mb-4 text-5xl">⚠️</div>
         <h3 class="mb-2 text-xl font-bold text-yellow-800">Caja pendiente de cierre</h3>
@@ -92,7 +88,6 @@
     </div>
 
     @else
-    {{-- Formulario de apertura --}}
     <div class="p-8 bg-white shadow-lg rounded-3xl">
         <div class="mb-8 text-center">
             <div class="flex items-center justify-center w-20 h-20 mx-auto mb-4 text-3xl font-bold text-white rounded-full shadow-lg bg-gradient-to-br from-green-500 to-emerald-500">💰</div>

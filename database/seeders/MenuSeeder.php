@@ -56,7 +56,6 @@ class MenuSeeder extends Seeder
                 ['modulo_id' => $inventario->id, 'menu_padre_id' => $catInventario->id, 'nombre' => 'Productos'],
                 ['ruta' => '/productos', 'orden' => 1, 'activo' => true]
             );
-
             Menu::firstOrCreate(
                 ['modulo_id' => $inventario->id, 'menu_padre_id' => $catInventario->id, 'nombre' => 'Insumos'],
                 ['ruta' => '/insumos', 'orden' => 2, 'activo' => true]
@@ -116,6 +115,10 @@ class MenuSeeder extends Seeder
                 ['modulo_id' => $ventas->id, 'nombre' => 'Cotizaciones'],
                 ['ruta' => '/cotizaciones', 'icono' => '📝', 'orden' => 2, 'activo' => true]
             );
+            Menu::firstOrCreate(
+                ['modulo_id' => $ventas->id, 'nombre' => 'Historial de Ventas'],
+                ['ruta' => '/ventas/historial', 'icono' => '📋', 'orden' => 3, 'activo' => true]
+            );
         }
 
         // ===== FACTURACION =====
@@ -143,17 +146,21 @@ class MenuSeeder extends Seeder
         // ===== CAJA =====
         $caja = Modulo::where('nombre', 'Caja')->first();
         if ($caja) {
-            // Submenú de Configuración (solo visible para Admin y Super Admin)
+            // Configuración
             $configCaja = Menu::firstOrCreate(
                 ['modulo_id' => $caja->id, 'nombre' => 'Configuración'],
                 ['icono' => '⚙️', 'orden' => 0, 'activo' => true]
             );
             Menu::firstOrCreate(
-                ['modulo_id' => $caja->id, 'menu_padre_id' => $configCaja->id, 'nombre' => 'Cajas'],
+                ['modulo_id' => $caja->id, 'menu_padre_id' => $configCaja->id, 'nombre' => 'Listado de Cajas'],
                 ['ruta' => '/caja/cajas', 'orden' => 1, 'activo' => true]
             );
+            Menu::firstOrCreate(
+                ['modulo_id' => $caja->id, 'menu_padre_id' => $configCaja->id, 'nombre' => 'Nueva Caja'],
+                ['ruta' => '/caja/cajas/create', 'orden' => 2, 'activo' => true]
+            );
 
-            // Submenú de Operaciones
+            // Operaciones
             $menuCaja = Menu::firstOrCreate(
                 ['modulo_id' => $caja->id, 'nombre' => 'Operaciones'],
                 ['icono' => '💵', 'orden' => 1, 'activo' => true]
@@ -174,19 +181,29 @@ class MenuSeeder extends Seeder
                 ['modulo_id' => $caja->id, 'menu_padre_id' => $menuCaja->id, 'nombre' => 'Transferencias'],
                 ['ruta' => '/caja/transferencias', 'orden' => 4, 'activo' => true]
             );
+
+            // Autorizaciones
+            $authCaja = Menu::firstOrCreate(
+                ['modulo_id' => $caja->id, 'nombre' => 'Autorizaciones'],
+                ['icono' => '🔐', 'orden' => 2, 'activo' => true]
+            );
             Menu::firstOrCreate(
-                ['modulo_id' => $caja->id, 'menu_padre_id' => $menuCaja->id, 'nombre' => 'Autorizaciones'],
-                ['ruta' => '/caja/autorizaciones', 'orden' => 5, 'activo' => true]
+                ['modulo_id' => $caja->id, 'menu_padre_id' => $authCaja->id, 'nombre' => 'Pendientes'],
+                ['ruta' => '/caja/autorizaciones', 'orden' => 1, 'activo' => true]
             );
 
-            // Submenú de Reportes
+            // Reportes
             $reportesCaja = Menu::firstOrCreate(
                 ['modulo_id' => $caja->id, 'nombre' => 'Reportes'],
-                ['icono' => '📊', 'orden' => 2, 'activo' => true]
+                ['icono' => '📊', 'orden' => 3, 'activo' => true]
             );
             Menu::firstOrCreate(
                 ['modulo_id' => $caja->id, 'menu_padre_id' => $reportesCaja->id, 'nombre' => 'Dashboard'],
-                ['ruta' => '/reportes/caja-dashboard', 'orden' => 1, 'activo' => true]
+                ['ruta' => '/dashboard-caja', 'orden' => 1, 'activo' => true]
+            );
+            Menu::firstOrCreate(
+                ['modulo_id' => $caja->id, 'menu_padre_id' => $reportesCaja->id, 'nombre' => 'Reporte Diario'],
+                ['ruta' => '/reportes/caja-dashboard', 'orden' => 2, 'activo' => true]
             );
         }
 
@@ -195,11 +212,11 @@ class MenuSeeder extends Seeder
         if ($cobranza) {
             $menuCobranza = Menu::firstOrCreate(
                 ['modulo_id' => $cobranza->id, 'nombre' => 'Gestión'],
-                ['icono' => '📋', 'orden' => 1, 'activo' => true]
+                ['icono' => '💰', 'orden' => 1, 'activo' => true]
             );
             Menu::firstOrCreate(
                 ['modulo_id' => $cobranza->id, 'menu_padre_id' => $menuCobranza->id, 'nombre' => 'Créditos'],
-                ['ruta' => '/cobranza', 'orden' => 1, 'activo' => true]
+                ['ruta' => '/cobranza/creditos', 'orden' => 1, 'activo' => true]
             );
             Menu::firstOrCreate(
                 ['modulo_id' => $cobranza->id, 'menu_padre_id' => $menuCobranza->id, 'nombre' => 'Historial'],
@@ -214,13 +231,9 @@ class MenuSeeder extends Seeder
         // ===== FORMAS DE PAGO =====
         $formasPago = Modulo::where('nombre', 'FormasPago')->first();
         if ($formasPago) {
-            $menuFP = Menu::firstOrCreate(
-                ['modulo_id' => $formasPago->id, 'nombre' => 'Catálogo'],
-                ['icono' => '💳', 'orden' => 1, 'activo' => true]
-            );
             Menu::firstOrCreate(
-                ['modulo_id' => $formasPago->id, 'menu_padre_id' => $menuFP->id, 'nombre' => 'Ver todas'],
-                ['ruta' => '/formas-pago', 'orden' => 1, 'activo' => true]
+                ['modulo_id' => $formasPago->id, 'nombre' => 'Catálogo'],
+                ['ruta' => '/formas-pago', 'icono' => '💳', 'orden' => 1, 'activo' => true]
             );
         }
 
@@ -240,17 +253,9 @@ class MenuSeeder extends Seeder
         // ===== IMPRESORAS =====
         $impresoras = Modulo::where('nombre', 'Impresoras')->first();
         if ($impresoras) {
-            $menuImp = Menu::firstOrCreate(
+            Menu::firstOrCreate(
                 ['modulo_id' => $impresoras->id, 'nombre' => 'Gestión'],
-                ['icono' => '🖨️', 'orden' => 1, 'activo' => true]
-            );
-            Menu::firstOrCreate(
-                ['modulo_id' => $impresoras->id, 'menu_padre_id' => $menuImp->id, 'nombre' => 'Lista'],
-                ['ruta' => '/impresoras', 'orden' => 1, 'activo' => true]
-            );
-            Menu::firstOrCreate(
-                ['modulo_id' => $impresoras->id, 'menu_padre_id' => $menuImp->id, 'nombre' => 'Nueva'],
-                ['ruta' => '/impresoras/create', 'orden' => 2, 'activo' => true]
+                ['ruta' => '/impresoras', 'icono' => '🖨️', 'orden' => 1, 'activo' => true]
             );
         }
 

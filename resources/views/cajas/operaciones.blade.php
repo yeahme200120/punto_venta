@@ -1,4 +1,3 @@
-{{-- resources/views/cajas/operaciones.blade.php --}}
 @extends('layouts.app')
 
 @section('title', 'Operaciones de Caja')
@@ -26,7 +25,6 @@
 <x-alert type="error" :message="session('error')" />
 
 <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
-    {{-- Resumen de caja --}}
     <div class="lg:col-span-1">
         <div class="sticky p-6 bg-white shadow-lg rounded-3xl top-24">
             <div class="mb-6 text-center">
@@ -36,51 +34,48 @@
             </div>
 
             <div class="space-y-3">
-                <div class="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
+                <div class="flex justify-between p-3 bg-gray-50 rounded-xl">
                     <span class="text-sm text-gray-600">Apertura</span>
-                    <span class="font-semibold text-green-600">${{ number_format($resumen['apertura'], 2) }}</span>
+                    <span class="font-semibold text-green-600">${{ number_format(floatval($resumen['apertura']), 2) }}</span>
                 </div>
-                <div class="flex items-center justify-between p-3 bg-blue-50 rounded-xl">
+                <div class="flex justify-between p-3 bg-blue-50 rounded-xl">
                     <span class="text-sm text-gray-600">Ingresos</span>
-                    <span class="font-semibold text-blue-600">+ ${{ number_format($resumen['total_ingresos'], 2) }}</span>
+                    <span class="font-semibold text-blue-600">+ ${{ number_format(floatval($resumen['total_ingresos']), 2) }}</span>
                 </div>
-                <div class="flex items-center justify-between p-3 bg-red-50 rounded-xl">
+                <div class="flex justify-between p-3 bg-red-50 rounded-xl">
                     <span class="text-sm text-gray-600">Egresos</span>
-                    <span class="font-semibold text-red-600">- ${{ number_format($resumen['total_egresos'], 2) }}</span>
+                    <span class="font-semibold text-red-600">- ${{ number_format(floatval($resumen['total_egresos']), 2) }}</span>
                 </div>
-                <div class="flex items-center justify-between p-3 border-t-2 border-green-200 bg-green-50 rounded-xl">
+                <div class="flex justify-between p-3 bg-orange-50 rounded-xl">
+                    <span class="text-sm text-gray-600">Retiros parciales</span>
+                    <span class="font-semibold text-orange-600">- ${{ number_format($resumen['total_retiros'] ?? 0, 2) }}</span>
+                </div>
+                <div class="flex justify-between p-3 border-t-2 border-green-200 bg-green-50 rounded-xl">
                     <span class="text-sm font-semibold text-gray-700">Saldo esperado</span>
-                    <span class="font-bold text-green-700">${{ number_format($resumen['saldo_esperado'], 2) }}</span>
+                    <span class="font-bold text-green-700">${{ number_format(floatval($resumen['saldo_esperado']), 2) }}</span>
                 </div>
             </div>
 
             <div class="pt-4 mt-6 border-t">
                 <h4 class="mb-3 font-semibold text-slate-700">Por forma de pago</h4>
                 <div class="space-y-2 text-sm">
-                    <div class="flex justify-between">
-                        <span>💵 Efectivo</span>
-                        <span>${{ number_format($resumen['por_forma_pago']['efectivo'], 2) }}</span>
-                    </div>
-                    <div class="flex justify-between">
-                        <span>💳 Tarjeta Débito</span>
-                        <span>${{ number_format($resumen['por_forma_pago']['tarjeta_debito'], 2) }}</span>
-                    </div>
-                    <div class="flex justify-between">
-                        <span>💎 Tarjeta Crédito</span>
-                        <span>${{ number_format($resumen['por_forma_pago']['tarjeta_credito'], 2) }}</span>
-                    </div>
-                    <div class="flex justify-between">
-                        <span>🎫 Vale</span>
-                        <span>${{ number_format($resumen['por_forma_pago']['vale'], 2) }}</span>
-                    </div>
-                    <div class="flex justify-between">
-                        <span>🏦 Transferencia</span>
-                        <span>${{ number_format($resumen['por_forma_pago']['transferencia'], 2) }}</span>
-                    </div>
-                    <div class="flex justify-between">
-                        <span>📄 Cheque</span>
-                        <span>${{ number_format($resumen['por_forma_pago']['cheque'], 2) }}</span>
-                    </div>
+                    @foreach($resumen['por_forma_pago'] as $forma => $monto)
+                        @php
+                            $icono = '💰';
+                            $nombre = ucfirst(str_replace('_', ' ', $forma));
+                            if (isset($formasPago) && $formasPago->count() > 0) {
+                                $formaPagoObj = $formasPago->firstWhere('clave', $forma);
+                                if ($formaPagoObj && $formaPagoObj->icono) {
+                                    $icono = $formaPagoObj->icono;
+                                    $nombre = $formaPagoObj->nombre;
+                                }
+                            }
+                        @endphp
+                        <div class="flex justify-between">
+                            <span>{!! $icono !!} {{ $nombre }}</span>
+                            <span>${{ number_format(floatval($monto), 2) }}</span>
+                        </div>
+                    @endforeach
                 </div>
             </div>
 
@@ -92,16 +87,15 @@
         </div>
     </div>
 
-    {{-- Movimientos y registro --}}
     <div class="space-y-6 lg:col-span-2">
-        {{-- Formulario de registro --}}
+        {{-- Registrar movimiento --}}
         <div class="p-6 bg-white shadow-lg rounded-3xl">
             <h3 class="mb-4 text-lg font-bold text-slate-800">Registrar movimiento</h3>
-            
+
             <form action="{{ route('cajas.movimiento.registrar') }}" method="POST" class="space-y-4">
                 @csrf
                 <input type="hidden" name="apertura_id" value="{{ $apertura->id }}">
-                
+
                 <div class="grid grid-cols-2 gap-4">
                     <div>
                         <label class="block mb-1 text-sm font-medium">Tipo *</label>
@@ -113,12 +107,9 @@
                     <div>
                         <label class="block mb-1 text-sm font-medium">Forma de pago *</label>
                         <select name="forma_pago" required class="w-full px-3 py-2 border rounded-xl focus:ring-2 focus:ring-indigo-500">
-                            <option value="efectivo">💵 Efectivo</option>
-                            <option value="tarjeta_debito">💳 Tarjeta Débito</option>
-                            <option value="tarjeta_credito">💎 Tarjeta Crédito</option>
-                            <option value="vale">🎫 Vale</option>
-                            <option value="transferencia">🏦 Transferencia</option>
-                            <option value="cheque">📄 Cheque</option>
+                            @foreach($formasPago as $forma)
+                                <option value="{{ $forma->clave }}">{!! $forma->icono !!} {{ $forma->nombre }}</option>
+                            @endforeach
                         </select>
                     </div>
                 </div>
@@ -137,7 +128,7 @@
                         <optgroup label="Egresos" id="egresos-group" style="display:none">
                             <option value="compra">📦 Compra</option>
                             <option value="gasto">📝 Gasto operativo</option>
-                            <option value="retiro">💸 Retiro personal</option>
+                            <option value="retiro_parcial">💸 Retiro parcial</option>
                             <option value="transferencia">🔄 Transferencia enviada</option>
                             <option value="ajuste">⚙️ Ajuste negativo</option>
                         </optgroup>
@@ -148,8 +139,7 @@
                     <label class="block mb-1 text-sm font-medium">Monto *</label>
                     <div class="relative">
                         <span class="absolute left-3 top-2.5 text-gray-500">$</span>
-                        <input type="number" name="monto" step="0.01" min="0.01" required
-                            class="w-full py-2 pl-8 pr-4 border rounded-xl focus:ring-2 focus:ring-indigo-500">
+                        <input type="number" name="monto" step="0.01" min="0.01" required class="w-full py-2 pl-8 pr-4 border rounded-xl focus:ring-2 focus:ring-indigo-500">
                     </div>
                 </div>
 
@@ -174,40 +164,115 @@
             </form>
         </div>
 
-        {{-- Lista de movimientos --}}
+        {{-- Retiro Parcial de Caja --}}
         <div class="p-6 bg-white shadow-lg rounded-3xl">
-            <h3 class="mb-4 text-lg font-bold text-slate-800">Movimientos del día</h3>
-            
-            <div class="space-y-2 overflow-y-auto max-h-96">
-                @forelse($movimientos as $mov)
-                <div class="flex items-center justify-between p-3 border rounded-xl hover:bg-gray-50">
-                    <div class="flex items-center gap-3">
-                        <div class="w-10 h-10 rounded-full flex items-center justify-center {{ $mov->tipo == 'ingreso' ? 'bg-green-100' : 'bg-red-100' }}">
-                            <span class="text-lg">{{ $mov->tipo == 'ingreso' ? '💰' : '💸' }}</span>
-                        </div>
-                        <div>
-                            <p class="text-sm font-medium">{{ $mov->concepto }}</p>
-                            <p class="text-xs text-gray-500">{{ $mov->categoria }} • {{ $mov->forma_pago }}</p>
-                            @if($mov->referencia)
-                            <p class="text-xs text-gray-400">Ref: {{ $mov->referencia }}</p>
-                            @endif
-                        </div>
+            <div class="flex items-center gap-3 mb-4">
+                <div class="flex items-center justify-center w-10 h-10 text-xl bg-red-100 rounded-full">💸</div>
+                <div>
+                    <h3 class="text-lg font-bold text-slate-800">Retiro Parcial de Caja</h3>
+                    <p class="text-sm text-gray-500">Registra una salida de dinero de la caja</p>
+                </div>
+            </div>
+
+            <form action="{{ route('cajas.retiro.registrar') }}" method="POST" class="space-y-4">
+                @csrf
+                <input type="hidden" name="apertura_id" value="{{ $apertura->id }}">
+
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block mb-1 text-sm font-medium">Forma de pago *</label>
+                        <select name="forma_pago" required class="w-full px-3 py-2 border rounded-xl focus:ring-2 focus:ring-indigo-500">
+                            @foreach($formasPago as $forma)
+                                <option value="{{ $forma->clave }}">{!! $forma->icono !!} {{ $forma->nombre }}</option>
+                            @endforeach
+                        </select>
                     </div>
-                    <div class="text-right">
-                        <p class="font-bold {{ $mov->tipo == 'ingreso' ? 'text-green-600' : 'text-red-600' }}">
-                            {{ $mov->tipo == 'ingreso' ? '+' : '-' }} ${{ number_format($mov->monto, 2) }}
+                    <div>
+                        <label class="block mb-1 text-sm font-medium">Monto *</label>
+                        <div class="relative">
+                            <span class="absolute left-3 top-2.5 text-gray-500">$</span>
+                            <input type="number" name="monto" step="0.01" min="0.01" required class="w-full py-2 pl-8 pr-4 border rounded-xl focus:ring-2 focus:ring-indigo-500">
+                        </div>
+                        <p class="mt-1 text-xs text-gray-500">
+                            Saldo disponible: ${{ number_format($resumen['saldo_esperado'], 2) }}
                         </p>
-                        <p class="text-xs text-gray-400">{{ $mov->created_at->format('H:i') }}</p>
-                        @if($mov->requiere_autorizacion && !$mov->autorizado_por)
-                        <span class="text-xs text-yellow-600">⏳ Pendiente autorización</span>
-                        @endif
                     </div>
                 </div>
+
+                <div>
+                    <label class="block mb-1 text-sm font-medium">Motivo del retiro *</label>
+                    <textarea name="motivo" rows="2" required class="w-full px-3 py-2 border rounded-xl focus:ring-2 focus:ring-indigo-500"
+                        placeholder="Ej: Pago a proveedor, Compra de insumos, Retiro de excedente, etc."></textarea>
+                </div>
+
+                <div>
+                    <label class="block mb-1 text-sm font-medium">Referencia (opcional)</label>
+                    <input type="text" name="referencia" class="w-full px-3 py-2 border rounded-xl focus:ring-2 focus:ring-indigo-500">
+                </div>
+
+                <div class="flex items-center gap-3">
+                    <input type="checkbox" name="requiere_autorizacion" value="1" id="requiere_autorizacion_retiro">
+                    <label for="requiere_autorizacion_retiro" class="text-sm text-gray-700">Requiere autorización de administrador</label>
+                </div>
+
+                <button type="submit" class="w-full py-3 font-semibold text-white transition bg-red-600 rounded-xl hover:bg-red-700">
+                    💸 Registrar Retiro
+                </button>
+            </form>
+        </div>
+
+        {{-- Movimientos del día --}}
+        <div class="p-6 bg-white shadow-lg rounded-3xl">
+            <h3 class="mb-4 text-lg font-bold text-slate-800">Movimientos del día</h3>
+
+            <div class="space-y-2 overflow-y-auto max-h-96">
+                @forelse($movimientos as $mov)
+                    <div class="flex items-center justify-between p-3 border rounded-xl hover:bg-gray-50">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-full flex items-center justify-center {{ $mov->tipo == 'ingreso' ? 'bg-green-100' : 'bg-red-100' }}">
+                                <span class="text-lg">{{ $mov->tipo == 'ingreso' ? '💰' : '💸' }}</span>
+                            </div>
+                            <div>
+                                <p class="text-sm font-medium">{{ $mov->concepto }}</p>
+                                <p class="text-xs text-gray-500">
+                                    {{ $mov->categoria }} •
+                                    @php
+                                        $iconoMov = '💰';
+                                        $nombreMov = $mov->forma_pago;
+                                        if (isset($formasPago) && $formasPago->count() > 0) {
+                                            $formaPagoObj = $formasPago->firstWhere('clave', $mov->forma_pago);
+                                            if ($formaPagoObj && $formaPagoObj->icono) {
+                                                $iconoMov = $formaPagoObj->icono;
+                                                $nombreMov = $formaPagoObj->nombre;
+                                            }
+                                        }
+                                    @endphp
+                                    {!! $iconoMov !!} {{ $nombreMov }}
+                                    @if($mov->referencia) • Ref: {{ $mov->referencia }} @endif
+                                </p>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <div class="text-right">
+                                <p class="font-bold {{ $mov->tipo == 'ingreso' ? 'text-green-600' : 'text-red-600' }}">
+                                    {{ $mov->tipo == 'ingreso' ? '+' : '-' }} ${{ number_format($mov->monto, 2) }}
+                                </p>
+                                <p class="text-xs text-gray-400">{{ $mov->created_at->format('H:i') }}</p>
+                                @if($mov->requiere_autorizacion && !$mov->autorizado_por)
+                                    <span class="text-xs text-yellow-600">⏳ Pendiente autorización</span>
+                                @endif
+                            </div>
+                            <a href="{{ route('cajas.movimiento.ticket', $mov) }}" target="_blank"
+                                class="p-1 text-gray-400 transition hover:text-indigo-600" title="Imprimir ticket">
+                                🧾
+                            </a>
+                        </div>
+                    </div>
                 @empty
-                <p class="py-6 text-center text-gray-400">No hay movimientos registrados</p>
+                    <p class="py-6 text-center text-gray-400">No hay movimientos registrados</p>
                 @endforelse
             </div>
-            
+
             <div class="mt-4">
                 {{ $movimientos->links() }}
             </div>
@@ -216,21 +281,21 @@
 </div>
 
 <script>
-function toggleCategorias(select) {
-    const tipo = select.value;
-    const ingresosGroup = document.getElementById('ingresos-group');
-    const egresosGroup = document.getElementById('egresos-group');
-    const categoriaSelect = document.getElementById('categoria');
-    
-    if (tipo === 'ingreso') {
-        ingresosGroup.style.display = '';
-        egresosGroup.style.display = 'none';
-        categoriaSelect.value = 'venta';
-    } else {
-        ingresosGroup.style.display = 'none';
-        egresosGroup.style.display = '';
-        categoriaSelect.value = 'compra';
+    function toggleCategorias(select) {
+        const tipo = select.value;
+        const ingresosGroup = document.getElementById('ingresos-group');
+        const egresosGroup = document.getElementById('egresos-group');
+        const categoriaSelect = document.getElementById('categoria');
+
+        if (tipo === 'ingreso') {
+            ingresosGroup.style.display = '';
+            egresosGroup.style.display = 'none';
+            categoriaSelect.value = 'venta';
+        } else {
+            ingresosGroup.style.display = 'none';
+            egresosGroup.style.display = '';
+            categoriaSelect.value = 'compra';
+        }
     }
-}
 </script>
 @endsection

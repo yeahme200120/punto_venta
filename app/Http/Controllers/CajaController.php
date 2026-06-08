@@ -9,6 +9,7 @@ use App\Models\CajaMovimiento;
 use App\Models\CajaTransferencia;
 use App\Models\Sucursal;
 use App\Services\CajaService;
+use App\Services\TicketService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -26,8 +27,36 @@ class CajaController extends Controller
     private function sucursalActivaId()
     {
         if (auth()->user()->hasRole('Super Admin')) {
-            return session('sucursal_activa_id');
+            // Intentar obtener de la sesión
+            $sucursalId = session('sucursal_activa_id');
+
+            // Si no hay sucursal en sesión, obtener la primera sucursal activa de la empresa
+            if (!$sucursalId) {
+                $sucursal = Sucursal::where('empresa_id', $this->empresaActivaId())
+                    ->where('activo', true)
+                    ->first();
+
+                if ($sucursal) {
+                    $sucursalId = $sucursal->id;
+                    session(['sucursal_activa_id' => $sucursalId]);
+                }
+            }
+
+            // Si aún no hay, intentar obtener de la caja abierta del usuario
+            if (!$sucursalId) {
+                $apertura = CajaApertura::where('user_id', auth()->id())
+                    ->where('estado', 'abierta')
+                    ->first();
+
+                if ($apertura) {
+                    $sucursalId = $apertura->sucursal_id;
+                    session(['sucursal_activa_id' => $sucursalId]);
+                }
+            }
+
+            return $sucursalId;
         }
+
         return auth()->user()->sucursal_id;
     }
 
@@ -61,7 +90,7 @@ class CajaController extends Controller
                 ->where('activo', true)
                 ->get();
 
-            return view('cajas.create', compact('sucursales'));
+            return view('cajas.create-caja', compact('sucursales'));
         } catch (\Exception $e) {
             Log::error('Error al cargar formulario: ' . $e->getMessage());
             return back()->with('error', 'Error al cargar el formulario.');
@@ -91,7 +120,7 @@ class CajaController extends Controller
             ]);
 
             DB::commit();
-            return redirect()->route('cajas.index')
+            return redirect()->route('cajas.cajas.index')
                 ->with('success', 'Caja "' . $caja->nombre . '" creada correctamente.');
         } catch (\Exception $e) {
             DB::rollBack();
@@ -116,13 +145,32 @@ class CajaController extends Controller
 
     public function updateCaja(Request $request, Caja $caja)
     {
-        $validated = $request->validate([
-            'sucursal_id' => 'required|exists:sucursals,id',
-            'nombre' => 'required|string|max:100',
-            'descripcion' => 'nullable|string',
-            'permite_multiple' => 'boolean',
-            'activo' => 'boolean',
-        ]);
+        $validated = $request->validate(
+            [
+                'sucursal_id' => 'required|exists:sucursals,id',
+                'nombre' => 'required|string|max:100',
+                'descripcion' => 'nullable|string',
+                'permite_multiple' => 'boolean',
+                'activo' => 'boolean',
+            ],
+            [
+                // sucursal_id
+                'sucursal_id.required' => 'La sucursal es obligatoria.',
+                'sucursal_id.exists' => 'La sucursal seleccionada no existe.',
+
+                // nombre
+                'nombre.required' => 'El nombre es obligatorio.',
+                'nombre.string' => 'El nombre debe ser un texto válido.',
+                'nombre.max' => 'El nombre no puede superar los 100 caracteres.',
+
+                // descripcion
+                'descripcion.string' => 'La descripción debe ser un texto válido.',
+
+                // booleanos
+                'permite_multiple.boolean' => 'El campo "permite múltiple" debe ser verdadero o falso.',
+                'activo.boolean' => 'El campo "activo" debe ser verdadero o falso.',
+            ]
+        );
 
         DB::beginTransaction();
         try {
@@ -135,7 +183,7 @@ class CajaController extends Controller
             ]);
 
             DB::commit();
-            return redirect()->route('cajas.index')
+            return redirect()->route('cajas.cajas.index')
                 ->with('success', 'Caja "' . $caja->nombre . '" actualizada correctamente.');
         } catch (\Exception $e) {
             DB::rollBack();
@@ -210,15 +258,61 @@ class CajaController extends Controller
         ]);
 
         try {
+            DB::beginTransaction();
+
+            $apertura = CajaApertura::findOrFail($validated['apertura_id']);
+
+            // Verificar retiros pendientes de autorización
+            $retirosPendientes = CajaMovimiento::where('caja_apertura_id', $apertura->id)
+                ->where('tipo', 'egreso')
+                ->where('categoria', 'retiro_parcial')
+                ->where('requiere_autorizacion', true)
+                ->whereNull('autorizado_por')
+                ->sum('monto');
+
+            if ($retirosPendientes > 0) {
+                return back()->with('error', "Hay retiros pendientes de autorización por $$retirosPendientes. Debes autorizarlos antes de cerrar la caja.");
+            }
+
+            // Calcular saldo esperado
+            $saldoEsperado = $apertura->monto_inicial + $apertura->total_ingresos - $apertura->total_egresos;
+
+            // Si el monto final es menor al saldo esperado, se debe retirar la diferencia
+            if ($validated['monto_final'] < $saldoEsperado) {
+                $diferencia = $saldoEsperado - $validated['monto_final'];
+
+                // Registrar retiro final
+                $movimiento = CajaMovimiento::create([
+                    'caja_apertura_id' => $apertura->id,
+                    'user_id' => auth()->id(),
+                    'sucursal_id' => $apertura->sucursal_id,
+                    'tipo' => 'egreso',
+                    'categoria' => 'retiro_final',
+                    'forma_pago' => 'efectivo',
+                    'monto' => $diferencia,
+                    'concepto' => "RETIRO FINAL DE CIERRE DE CAJA",
+                    'referencia' => "CIERRE-{$apertura->id}",
+                    'requiere_autorizacion' => false
+                ]);
+
+                // Actualizar totales de la apertura
+                $apertura->increment('total_egresos', $diferencia);
+            }
+
+            // Cerrar la caja
             CajaService::cerrarCaja(
                 $validated['apertura_id'],
                 $validated['monto_final'],
                 $validated['observaciones'] ?? null
             );
 
+            DB::commit();
+
             return redirect()->route('cajas.apertura')
                 ->with('success', 'Caja cerrada correctamente.');
+
         } catch (\Exception $e) {
+            DB::rollBack();
             return back()->with('error', $e->getMessage());
         }
     }
@@ -247,7 +341,14 @@ class CajaController extends Controller
 
             $resumen = CajaService::resumenDia($apertura->id);
 
-            return view('cajas.operaciones', compact('apertura', 'movimientos', 'resumen'));
+            // Obtener formas de pago activas
+            $empresaId = $this->empresaActivaId();
+            $formasPago = \App\Models\FormaPago::where('empresa_id', $empresaId)
+                ->where('activo', true)
+                ->orderBy('orden')
+                ->get();
+
+            return view('cajas.operaciones', compact('apertura', 'movimientos', 'resumen', 'formasPago'));
         } catch (\Exception $e) {
             Log::error('Error al cargar operaciones: ' . $e->getMessage());
             return back()->with('error', 'Error al cargar las operaciones.');
@@ -401,16 +502,23 @@ class CajaController extends Controller
     public function reporteDia($aperturaId)
     {
         try {
-            $resumen = CajaService::resumenDia($aperturaId);
-            $apertura = CajaApertura::with(['caja', 'usuario', 'movimientos'])->findOrFail($aperturaId);
+            $empresaId = $this->empresaActivaId();
 
-            return view('cajas.reporte-dia', compact('resumen', 'apertura'));
+            $resumen = CajaService::resumenDia($aperturaId);
+            $apertura = CajaApertura::with(['caja', 'usuario', 'movimientos', 'sucursal'])->findOrFail($aperturaId);
+
+            // Obtener formas de pago activas para mostrar iconos
+            $formasPago = \App\Models\FormaPago::where('empresa_id', $empresaId)
+                ->where('activo', true)
+                ->orderBy('orden')
+                ->get();
+
+            return view('cajas.reporte-dia', compact('resumen', 'apertura', 'formasPago'));
         } catch (\Exception $e) {
             Log::error('Error al generar reporte: ' . $e->getMessage());
-            return back()->with('error', 'Error al generar el reporte.');
+            return back()->with('error', 'Error al generar el reporte: ' . $e->getMessage());
         }
     }
-    // En app/Http/Controllers/CajaController.php agregar:
 
     // ==================== ARQUEOS ====================
 
@@ -430,37 +538,59 @@ class CajaController extends Controller
                     ->with('error', 'No tienes una caja abierta. Debes abrir una caja primero.');
             }
 
-            // Obtener movimientos del sistema agrupados por forma de pago
-            $movimientosSistema = CajaMovimiento::where('caja_apertura_id', $apertura->id)
-                ->select(
-                    'forma_pago',
-                    DB::raw('SUM(CASE WHEN tipo = "ingreso" THEN monto ELSE 0 END) as total_ingresos'),
-                    DB::raw('SUM(CASE WHEN tipo = "egreso" THEN monto ELSE 0 END) as total_egresos')
-                )
+            // Obtener formas de pago activas
+            $empresaId = $this->empresaActivaId();
+            $formasPago = \App\Models\FormaPago::where('empresa_id', $empresaId)
+                ->where('activo', true)
+                ->orderBy('orden')
+                ->get();
+
+            // Inicializar totales del sistema por forma de pago (ingresos)
+            $totalesSistema = [];
+            foreach ($formasPago as $forma) {
+                $totalesSistema[$forma->clave] = 0;
+            }
+
+            // Calcular ingresos del sistema por forma de pago
+            $ingresosSistema = CajaMovimiento::where('caja_apertura_id', $apertura->id)
+                ->where('tipo', 'ingreso')
+                ->select('forma_pago', DB::raw('SUM(monto) as total'))
                 ->groupBy('forma_pago')
                 ->get();
 
-            $totalesSistema = [
-                'efectivo' => 0,
-                'tarjeta_debito' => 0,
-                'tarjeta_credito' => 0,
-                'vale' => 0,
-                'transferencia' => 0,
-                'cheque' => 0,
-            ];
-
-            foreach ($movimientosSistema as $mov) {
-                $neto = $mov->total_ingresos - $mov->total_egresos;
-                $totalesSistema[$mov->forma_pago] = $neto;
+            foreach ($ingresosSistema as $mov) {
+                if (isset($totalesSistema[$mov->forma_pago])) {
+                    $totalesSistema[$mov->forma_pago] = floatval($mov->total);
+                }
             }
 
-            $totalSistema = $apertura->monto_inicial + $apertura->total_ingresos - $apertura->total_egresos;
+            // Calcular egresos del sistema por forma de pago
+            $egresosSistema = [];
+            foreach ($formasPago as $forma) {
+                $egresosSistema[$forma->clave] = 0;
+            }
+
+            $egresosData = CajaMovimiento::where('caja_apertura_id', $apertura->id)
+                ->where('tipo', 'egreso')
+                ->select('forma_pago', DB::raw('SUM(monto) as total'))
+                ->groupBy('forma_pago')
+                ->get();
+
+            foreach ($egresosData as $mov) {
+                if (isset($egresosSistema[$mov->forma_pago])) {
+                    $egresosSistema[$mov->forma_pago] = floatval($mov->total);
+                }
+            }
+
+            $totalIngresos = $apertura->total_ingresos;
+            $totalEgresos = $apertura->total_egresos;
+            $totalSistema = $apertura->monto_inicial + $totalIngresos - $totalEgresos;
 
             $arqueos = CajaArqueo::where('caja_apertura_id', $apertura->id)
                 ->orderBy('created_at', 'desc')
                 ->get();
 
-            return view('cajas.arqueos', compact('apertura', 'totalesSistema', 'totalSistema', 'arqueos'));
+            return view('cajas.arqueos', compact('apertura', 'totalesSistema', 'egresosSistema', 'totalSistema', 'arqueos', 'formasPago', 'totalIngresos', 'totalEgresos'));
         } catch (\Exception $e) {
             Log::error('Error al cargar arqueos: ' . $e->getMessage());
             return back()->with('error', 'Error al cargar los arqueos.');
@@ -469,50 +599,87 @@ class CajaController extends Controller
 
     public function registrarArqueo(Request $request)
     {
-        $validated = $request->validate([
-            'efectivo_contado' => 'required|numeric|min:0',
-            'tarjeta_debito_contado' => 'required|numeric|min:0',
-            'tarjeta_credito_contado' => 'required|numeric|min:0',
-            'vale_contado' => 'required|numeric|min:0',
-            'transferencia_contado' => 'required|numeric|min:0',
-            'cheque_contado' => 'required|numeric|min:0',
-            'observaciones' => 'nullable|string',
-            'estado' => 'required|in:borrador,finalizado'
-        ]);
-
-        DB::beginTransaction();
         try {
+            DB::beginTransaction();
+
             $apertura = CajaApertura::findOrFail($request->apertura_id);
 
-            // Calcular total contado
-            $totalContado =
-                $validated['efectivo_contado'] +
-                $validated['tarjeta_debito_contado'] +
-                $validated['tarjeta_credito_contado'] +
-                $validated['vale_contado'] +
-                $validated['transferencia_contado'] +
-                $validated['cheque_contado'];
+            // Obtener formas de pago activas
+            $empresaId = $this->empresaActivaId();
+            $formasPago = \App\Models\FormaPago::where('empresa_id', $empresaId)
+                ->where('activo', true)
+                ->get();
+
+            // Validar y construir array de montos contados
+            $montosContado = [];
+            $totalContado = 0;
+
+            foreach ($formasPago as $forma) {
+                $campo = $forma->clave . '_contado';
+                $monto = floatval($request->input($campo, 0));
+                $montosContado[$forma->clave] = $monto;
+                $totalContado += $monto;
+            }
+
+            // Validar que efectivo sea > 0
+            if (($montosContado['efectivo'] ?? 0) <= 0) {
+                throw new \Exception('El campo Efectivo contado es obligatorio y debe ser mayor a 0.');
+            }
 
             // Calcular total sistema
             $totalSistema = $apertura->monto_inicial + $apertura->total_ingresos - $apertura->total_egresos;
+            $diferencia = $totalContado - $totalSistema;
 
+            // Registrar arqueo
             $arqueo = CajaArqueo::create([
                 'caja_apertura_id' => $apertura->id,
                 'user_id' => auth()->id(),
                 'sucursal_id' => $apertura->sucursal_id,
                 'fecha_arqueo' => now(),
-                'efectivo_contado' => $validated['efectivo_contado'],
-                'tarjeta_debito_contado' => $validated['tarjeta_debito_contado'],
-                'tarjeta_credito_contado' => $validated['tarjeta_credito_contado'],
-                'vale_contado' => $validated['vale_contado'],
-                'transferencia_contado' => $validated['transferencia_contado'],
-                'cheque_contado' => $validated['cheque_contado'],
+                'efectivo_contado' => $montosContado['efectivo'] ?? 0,
+                'tarjeta_debito_contado' => $montosContado['tarjeta_debito'] ?? 0,
+                'tarjeta_credito_contado' => $montosContado['tarjeta_credito'] ?? 0,
+                'vale_contado' => $montosContado['vale'] ?? 0,
+                'transferencia_contado' => $montosContado['transferencia'] ?? 0,
+                'cheque_contado' => $montosContado['cheque'] ?? 0,
                 'total_contado' => $totalContado,
                 'total_sistema' => $totalSistema,
-                'diferencia' => $totalContado - $totalSistema,
-                'observaciones' => $validated['observaciones'],
-                'estado' => $validated['estado']
+                'diferencia' => $diferencia,
+                'observaciones' => $request->observaciones,
+                'estado' => $request->estado
             ]);
+
+            // === SI HAY SOBRANTE, SE RETIRA DE LA CAJA ===
+            if ($diferencia > 0.01) {
+                // Registrar movimiento de retiro por el sobrante
+                $movimiento = CajaMovimiento::create([
+                    'caja_apertura_id' => $apertura->id,
+                    'user_id' => auth()->id(),
+                    'sucursal_id' => $apertura->sucursal_id,
+                    'tipo' => 'egreso',
+                    'categoria' => 'retiro_parcial',
+                    'forma_pago' => 'efectivo',
+                    'monto' => $diferencia,
+                    'concepto' => "RETIRO POR SOBRANTE DE ARQUEO - Diferencia positiva detectada",
+                    'referencia' => "ARQUEO-{$arqueo->id}",
+                    'requiere_autorizacion' => false
+                ]);
+
+                // Actualizar totales de la apertura
+                $apertura->increment('total_egresos', $diferencia);
+
+                // ACTUALIZAR SALDO DE LA CAJA (se resta el sobrante)
+                $apertura->caja->decrement('saldo_actual', $diferencia);
+
+                $mensajeRetiro = " Se retiró el sobrante de $" . number_format($diferencia, 2) . " de la caja.";
+            } else {
+                $mensajeRetiro = "";
+            }
+
+            // Si hay faltante, solo se registra (NO se ajusta la caja)
+            if ($diferencia < -0.01) {
+                $mensajeRetiro = " Se detectó un faltante de $" . number_format(abs($diferencia), 2) . ". Verifica la diferencia.";
+            }
 
             DB::commit();
 
@@ -520,12 +687,15 @@ class CajaController extends Controller
                 ? 'Arqueo finalizado correctamente.'
                 : 'Arqueo guardado como borrador.';
 
+            $mensaje .= $mensajeRetiro;
+
             return redirect()->route('cajas.arqueos')
                 ->with('success', $mensaje);
+
         } catch (\Exception $e) {
             DB::rollBack();
             Log::error('Error al registrar arqueo: ' . $e->getMessage());
-            return back()->with('error', 'Error al registrar el arqueo.');
+            return back()->with('error', 'Error al registrar el arqueo: ' . $e->getMessage());
         }
     }
 
@@ -539,15 +709,143 @@ class CajaController extends Controller
             return back()->with('error', 'Error al cargar el arqueo.');
         }
     }
+    // Método para imprimir ticket de movimiento
+    public function imprimirTicketMovimiento(CajaMovimiento $movimiento)
+    {
+        try {
+            $movimiento->load(['cajaApertura.caja', 'usuario']);
+            $ticketService = new TicketService();
+            return $ticketService->movimientoTicket($movimiento);
+        } catch (\Exception $e) {
+            Log::error('Error al imprimir ticket movimiento: ' . $e->getMessage());
+            return back()->with('error', 'Error al generar el ticket: ' . $e->getMessage());
+        }
+    }
+
+    // Método para imprimir ticket de transferencia
+    public function imprimirTicketTransferencia(CajaTransferencia $transferencia)
+    {
+        try {
+            $transferencia->load(['cajaOrigen', 'cajaDestino', 'usuario', 'autorizador']);
+            $ticketService = new TicketService();
+            return $ticketService->transferenciaTicket($transferencia);
+        } catch (\Exception $e) {
+            Log::error('Error al imprimir ticket transferencia: ' . $e->getMessage());
+            return back()->with('error', 'Error al generar el ticket: ' . $e->getMessage());
+        }
+    }
+
+    // Método para imprimir ticket de arqueo
+    public function imprimirTicketArqueo(CajaArqueo $arqueo)
+    {
+        try {
+            $arqueo->load(['cajaApertura.caja', 'usuario']);
+            $ticketService = new TicketService();
+            return $ticketService->arqueoTicket($arqueo);
+        } catch (\Exception $e) {
+            Log::error('Error al imprimir ticket arqueo: ' . $e->getMessage());
+            return back()->with('error', 'Error al generar el ticket: ' . $e->getMessage());
+        }
+    }
+
+    // Método para imprimir ticket de cierre
+    public function imprimirTicketCierre($aperturaId)
+    {
+        try {
+            $resumen = CajaService::resumenDia($aperturaId);
+            $apertura = CajaApertura::with(['caja', 'usuario'])->findOrFail($aperturaId);
+            $ticketService = new TicketService();
+            return $ticketService->cierreTicket($apertura, $resumen);
+        } catch (\Exception $e) {
+            Log::error('Error al imprimir ticket cierre: ' . $e->getMessage());
+            return back()->with('error', 'Error al generar el ticket: ' . $e->getMessage());
+        }
+    }
+    // Agregar después del método imprimirTicketArqueo
 
     public function imprimirArqueo(CajaArqueo $arqueo)
     {
         try {
-            $arqueo->load(['cajaApertura.caja', 'usuario']);
-            return view('cajas.imprimir-arqueo', compact('arqueo'));
+            $arqueo->load(['cajaApertura.caja', 'usuario', 'sucursal']);
+
+            // Obtener formas de pago activas
+            $empresaId = $this->empresaActivaId();
+            $formasPago = \App\Models\FormaPago::where('empresa_id', $empresaId)
+                ->where('activo', true)
+                ->orderBy('orden')
+                ->get();
+
+            return view('cajas.imprimir-arqueo', compact('arqueo', 'formasPago'));
         } catch (\Exception $e) {
             Log::error('Error al imprimir arqueo: ' . $e->getMessage());
-            return back()->with('error', 'Error al imprimir el arqueo.');
+            return back()->with('error', 'Error al generar la impresión del arqueo.');
+        }
+    }
+    /**
+     * Registrar retiro parcial de caja
+     */
+    public function registrarRetiro(Request $request)
+    {
+        try {
+            DB::beginTransaction();
+
+            $validated = $request->validate([
+                'apertura_id' => 'required|exists:caja_aperturas,id',
+                'forma_pago' => 'required|string',
+                'monto' => 'required|numeric|min:0.01',
+                'motivo' => 'required|string|max:500',
+                'referencia' => 'nullable|string|max:100',
+                'requiere_autorizacion' => 'boolean',
+            ]);
+
+            $apertura = CajaApertura::findOrFail($validated['apertura_id']);
+
+            if ($apertura->estado !== 'abierta') {
+                throw new \Exception('La caja no está abierta.');
+            }
+
+            // Verificar saldo suficiente
+            $saldoActual = $apertura->saldoActual();
+            if ($saldoActual < $validated['monto']) {
+                throw new \Exception("Saldo insuficiente. Saldo actual: $" . number_format($saldoActual, 2));
+            }
+
+            // Registrar movimiento de retiro
+            $movimiento = CajaMovimiento::create([
+                'caja_apertura_id' => $apertura->id,
+                'user_id' => auth()->id(),
+                'sucursal_id' => $apertura->sucursal_id,
+                'tipo' => 'egreso',
+                'categoria' => 'retiro_parcial',
+                'forma_pago' => $validated['forma_pago'],
+                'monto' => $validated['monto'],
+                'concepto' => "RETIRO PARCIAL - {$validated['motivo']}",
+                'referencia' => $validated['referencia'] ?? null,
+                'requiere_autorizacion' => $validated['requiere_autorizacion'] ?? false
+            ]);
+
+            // Actualizar totales de la apertura
+            $apertura->increment('total_egresos', $validated['monto']);
+
+            // Si no requiere autorización, actualizar saldo inmediatamente
+            if (!$movimiento->requiere_autorizacion) {
+                $apertura->caja->decrement('saldo_actual', $validated['monto']);
+            }
+
+            DB::commit();
+
+            $mensaje = 'Retiro registrado correctamente.';
+            if ($movimiento->requiere_autorizacion) {
+                $mensaje = 'Retiro registrado. Requiere autorización de un administrador.';
+            }
+
+            return redirect()->route('cajas.operaciones')
+                ->with('success', $mensaje);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Error al registrar retiro: ' . $e->getMessage());
+            return back()->with('error', $e->getMessage());
         }
     }
 }

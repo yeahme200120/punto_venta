@@ -17,11 +17,8 @@ return new class extends Migration
             $table->unsignedBigInteger('user_id');
             $table->unsignedBigInteger('sucursal_id');
             $table->enum('tipo', ['ingreso', 'egreso']);
-            $table->enum('categoria', [
-                'venta', 'abono_credito', 'cobro_servicio', 'prestamo', 
-                'compra', 'gasto', 'retiro', 'transferencia', 'ajuste'
-            ]);
-            $table->enum('forma_pago', ['efectivo', 'tarjeta_debito', 'tarjeta_credito', 'vale', 'transferencia', 'cheque']);
+            $table->string('categoria', 150);
+            $table->string('forma_pago',150);
             $table->decimal('monto', 12, 2);
             $table->string('referencia')->nullable();
             $table->text('concepto');
