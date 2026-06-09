@@ -1,4 +1,3 @@
-{{-- resources/views/partials/sidebar.blade.php --}}
 @php
     $empresaActivaId = session('empresa_activa_id', auth()->user()->empresa_id);
     $empresaActiva = \App\Models\Empresa::with('licencia')->find($empresaActivaId);
@@ -42,7 +41,11 @@
     }
 @endphp
 
-<aside x-data="sidebar()" :class="collapsed ? 'w-20' : 'w-72'"
+<aside x-data="sidebar()" :class="{
+           'w-16': collapsed && !mobileOpen,
+           'w-64': !collapsed && !mobileOpen,
+           'fixed inset-0 z-50 w-64': mobileOpen
+       }"
     class="sticky top-0 z-30 flex flex-col flex-shrink-0 h-screen text-white transition-all duration-300 ease-in-out shadow-xl bg-gradient-to-b from-indigo-700 via-blue-700 to-cyan-600">
 
     {{-- Botón colapsar --}}
@@ -59,10 +62,10 @@
 
     {{-- Header de la empresa - Colapsable --}}
     <div
-        class="p-5 transition-all duration-300 border-b border-white/20 bg-gradient-to-r from-indigo-800/50 to-transparent">
+        class="p-4 transition-all duration-300 border-b border-white/20 bg-gradient-to-r from-indigo-800/50 to-transparent">
         <div class="flex items-center gap-3" :class="collapsed ? 'justify-center' : ''">
             <div
-                class="flex items-center justify-center flex-shrink-0 w-10 h-10 overflow-hidden bg-white/20 rounded-xl backdrop-blur-sm">
+                class="flex items-center justify-center flex-shrink-0 w-12 h-12 overflow-hidden bg-white/20 rounded-xl backdrop-blur-sm">
                 @if($empresaActiva && $empresaActiva->logo_url)
                     <img src="{{ $empresaActiva->logo_url }}" alt="Logo" class="object-cover w-full h-full">
                 @else
@@ -120,18 +123,18 @@
 
                             @if($hasChildren)
                                 <div x-data="{ openSubmenu: {{ $isMenuActive ? 'true' : 'false' }} }">
-                                    <div @click="openSubmenu = !openSubmenu"
+                                    <div @click.stop.prevent="openSubmenu = !openSubmenu"
                                         class="flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm transition-all duration-200 cursor-pointer"
                                         :class="{
-                                                                             'justify-center': collapsed,
-                                                                             'justify-between': !collapsed,
-                                                                             'bg-white/20 font-semibold shadow-sm': {{ $isMenuActive ? 'true' : 'false' }}
-                                                                         }">
+                                                                                                             'justify-center': collapsed,
+                                                                                                             'justify-between': !collapsed,
+                                                                                                             'bg-white text-slate-900 shadow-lg font-semibold shadow-sm': {{ $isMenuActive ? 'true' : 'false' }}
+                                                                                                         }">
                                         <div class="flex items-center gap-2" :class="collapsed ? '' : 'flex-1'">
-                                            <span class="w-1.5 h-1.5 rounded-full flex-shrink-0 transition-all duration-200" :class="{
-                                                                                      'bg-white': {{ $isMenuActive ? 'true' : 'false' }},
-                                                                                      'bg-blue-200': {{ !$isMenuActive ? 'true' : 'false' }}
-                                                                                  }"></span>
+                                            <span class="flex-shrink-0 transition-all duration-200 " :class="{
+                                                                                                                      'bg-white': {{ $isMenuActive ? 'true' : 'false' }},
+                                                                                                                      'bg-blue-200': {{ !$isMenuActive ? 'true' : 'false' }}
+                                                                                                                  }"></span>
                                             <span x-show="!collapsed" class="whitespace-nowrap">{{ $menu->nombre }}</span>
                                         </div>
                                         <svg x-show="!collapsed" class="flex-shrink-0 w-4 h-4 transition-transform duration-200"
@@ -145,16 +148,17 @@
                                         class="pl-2 mt-1 ml-4 space-y-1 border-l-2 border-white/20">
                                         @foreach($menu->hijos as $hijo)
                                             @php $isHijoActive = isset($activeMenus[$hijo->id]); @endphp
-                                            <a href="{{ url($hijo->ruta) }}"
+                                            <a href="{{ url($hijo->ruta) }}" :title="collapsed ? '{{ $menu->nombre }}' : ''"
                                                 class="flex items-center gap-2 px-3 py-2 rounded-lg transition-all duration-200 text-[13px] group"
                                                 :class="{
-                                                                                           'bg-white/20 font-medium': {{ $isHijoActive ? 'true' : 'false' }},
-                                                                                           'hover:bg-white/10 hover:pl-4': true
-                                                                                       }">
-                                                <span class="w-1 h-1 transition-colors duration-200 rounded-full" :class="{
-                                                                                                  'bg-white': {{ $isHijoActive ? 'true' : 'false' }},
-                                                                                                  'bg-blue-300 group-hover:bg-white': {{ !$isHijoActive ? 'true' : 'false' }}
-                                                                                              }"></span>
+                                                                                                                                   'bg-white/20 font-medium': {{ $isHijoActive ? 'true' : 'false' }},
+                                                                                                                                   'hover:bg-white/10 hover:pl-4 hover:translate-x-1': true
+                                                                                                                               }">
+                                                <span class="w-1 h-1 transition-colors duration-200 rounded-full"
+                                                    :class="{
+                                                                                                                                          'bg-white': {{ $isHijoActive ? 'true' : 'false' }},
+                                                                                                                                          'bg-blue-300 group-hover:bg-white': {{ !$isHijoActive ? 'true' : 'false' }}
+                                                                                                                                      }"></span>
                                                 <span>{{ $hijo->nombre }}</span>
                                             </a>
                                         @endforeach
@@ -164,13 +168,14 @@
                                 <a href="{{ url($menu->ruta) }}"
                                     class="flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm transition-all duration-200 group"
                                     :class="{
-                                                                       'justify-center': collapsed,
-                                                                       'bg-white/20 font-semibold shadow-sm': {{ $isMenuActive ? 'true' : 'false' }}
-                                                                   }">
-                                    <span class="w-1.5 h-1.5 rounded-full flex-shrink-0 transition-all duration-200" :class="{
-                                                                              'bg-white': {{ $isMenuActive ? 'true' : 'false' }},
-                                                                              'bg-blue-200': {{ !$isMenuActive ? 'true' : 'false' }}
-                                                                          }"></span>
+                                                                                                       'justify-center': collapsed,
+                                                                                                       'bg-white/20 font-semibold shadow-sm': {{ $isMenuActive ? 'true' : 'false' }}
+                                                                                                   }"
+                                    :title="collapsed ? '{{ $menu->nombre }}' : ''">
+                                    <span class="flex-shrink-0 transition-all duration-200 " :class="{
+                                                                                                              'bg-white': {{ $isMenuActive ? 'true' : 'false' }},
+                                                                                                              'bg-blue-200': {{ !$isMenuActive ? 'true' : 'false' }}
+                                                                                                          }"></span>
                                     <span x-show="!collapsed" class="whitespace-nowrap">{{ $menu->nombre }}</span>
                                 </a>
                             @endif
@@ -229,7 +234,26 @@
             toggleCollapse() {
                 this.collapsed = !this.collapsed;
                 localStorage.setItem('sidebarCollapsed', this.collapsed);
+            },
+            toggleMobileSidebar() {
+                this.mobileOpen = !this.mobileOpen;
+                if (this.mobileOpen) {
+                    document.body.classList.add('overflow-hidden');
+                } else {
+                    document.body.classList.remove('overflow-hidden');
+                }
             }
         }
     }
 </script>
+
+<style>
+    .sidebar-scroll::-webkit-scrollbar {
+        width: 5px;
+    }
+
+    .sidebar-scroll::-webkit-scrollbar-thumb {
+        border-radius: 999px;
+        background: rgba(255, 255, 255, .15);
+    }
+</style>

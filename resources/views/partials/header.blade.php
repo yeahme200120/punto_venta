@@ -36,7 +36,7 @@
         {{-- SELECTOR DE EMPRESA (SOLO SUPER ADMIN) --}}
         @if(auth()->user()->hasRole('Super Admin'))
         <div class="relative" x-data="{ openEmpresa: false }">
-            <button @click="openEmpresa = !openEmpresa"
+            <button @click.stop.prevent="openEmpresa = !openEmpresa"
                 class="flex items-center gap-2 px-3 py-2 text-sm font-medium transition md:px-4 bg-slate-100 rounded-xl hover:bg-slate-200">
                 <span class="text-base">🏢</span>
                 <span class="hidden sm:inline">{{ Str::limit(session('empresa_activa_nombre', auth()->user()->empresa->nombre ?? 'Sin empresa'), 20) }}</span>
@@ -105,7 +105,7 @@
         @endphp
 
         <div class="relative" x-data="{ openSucursal: false }">
-            <button @click="openSucursal = !openSucursal"
+            <button @click.stop.prevent="openSucursal = !openSucursal"
                 class="flex items-center gap-2 px-3 py-2 text-sm font-medium transition md:px-4 bg-slate-100 rounded-xl hover:bg-slate-200">
                 <span class="text-base">📍</span>
                 <span class="hidden sm:inline">{{ Str::limit($sucursalActiva->nombre ?? 'Sin sucursal', 20) }}</span>
@@ -168,7 +168,7 @@
 
         {{-- DROPDOWN DE USUARIO SIMPLIFICADO --}}
         <div class="relative" x-data="{ openUser: false }">
-            <button @click="openUser = !openUser"
+            <button @click.stop.prevent="openUser = !openUser"
                     class="flex items-center gap-2 p-2 transition-all duration-200 hover:bg-slate-100 rounded-xl">
                 <div class="flex items-center justify-center font-bold text-white rounded-full shadow-md w-9 h-9 bg-gradient-to-br from-indigo-600 to-cyan-500">
                     {{ strtoupper(substr(auth()->user()->name, 0, 1)) }}

@@ -55,8 +55,16 @@ class User extends Authenticatable
     // Verificar si la licencia de su empresa sigue vigente
     public function licenciaVigente(): bool
     {
-        if (!$this->empresa) return false;
-        if (!$this->empresa->activo) return false;
+        if (!$this->empresa)
+            return false;
+        if (!$this->empresa->activo)
+            return false;
         return $this->empresa->fecha_fin >= now();
+    }
+    public function refreshPermissions()
+    {
+        $this->load('permissions', 'roles');
+        app()->make(\Spatie\Permission\PermissionRegistrar::class)->forgetCachedPermissions();
+        return $this;
     }
 }

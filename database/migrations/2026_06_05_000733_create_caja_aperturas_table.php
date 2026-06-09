@@ -15,6 +15,7 @@ return new class extends Migration
             $table->id();
             $table->unsignedBigInteger('caja_id');
             $table->unsignedBigInteger('user_id');
+            $table->unsignedBigInteger('empresa_id');
             $table->unsignedBigInteger('sucursal_id');
             $table->date('fecha');
             $table->dateTime('fecha_apertura');

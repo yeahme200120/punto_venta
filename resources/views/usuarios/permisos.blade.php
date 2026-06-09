@@ -3,32 +3,18 @@
 @section('title', 'Permisos de ' . $usuario->name)
 @section('page-title', 'Permisos: ' . $usuario->name)
 @section('breadcrumbs')
-    <li>
-        <span class="text-gray-400">/</span>
-    </li>
-    <li>
-        <a href="{{ route('usuarios.index') }}" class="text-gray-500 transition-colors hover:text-indigo-600">
-            Usuarios
-        </a>
-    </li>
-    <li>
-        <span class="text-gray-400">/</span>
-    </li>
-    <li>
-        <span class="font-medium text-gray-700">{{ $usuario->name }}</span>
-    </li>
-    <li>
-        <span class="text-gray-400">/</span>
-    </li>
-    <li>
-        <span class="font-medium text-gray-700">Permisos</span>
-    </li>
+    <li><span class="text-gray-400">/</span></li>
+    <li><a href="{{ route('usuarios.index') }}" class="text-gray-500 hover:text-indigo-600">Usuarios</a></li>
+    <li><span class="text-gray-400">/</span></li>
+    <li><span class="font-medium text-gray-700">{{ $usuario->name }}</span></li>
+    <li><span class="text-gray-400">/</span></li>
+    <li><span class="font-medium text-gray-700">Permisos</span></li>
 @endsection
 
 @section('content')
 <div class="mx-auto max-w-7xl">
     {{-- Info usuario --}}
-    <div class="p-5 mb-5 bg-white border border-gray-100 shadow-sm rounded-2xl">
+    <div class="p-5 mb-5 bg-white border shadow-sm rounded-2xl">
         <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div class="flex items-center gap-4">
                 <div class="flex items-center justify-center text-xl font-bold text-white rounded-full shadow-md w-14 h-14 bg-gradient-to-br from-indigo-600 to-cyan-500">
@@ -58,9 +44,6 @@
                     </div>
                 </div>
             </div>
-            <div class="text-sm text-gray-500">
-                <span class="font-medium">Última actualización:</span> {{ $usuario->updated_at->format('d/m/Y H:i') }}
-            </div>
         </div>
     </div>
 
@@ -69,40 +52,40 @@
         @method('PUT')
 
         <div class="grid grid-cols-1 gap-5 lg:grid-cols-3">
-            {{-- Roles --}}
-            <div class="overflow-hidden bg-white border border-gray-100 shadow-sm rounded-2xl">
+            {{-- Roles (solo 1 rol) --}}
+            <div class="overflow-hidden bg-white border shadow-sm rounded-2xl">
                 <div class="p-4 border-b bg-gray-50">
                     <div class="flex items-center justify-between">
                         <div class="flex items-center gap-2">
                             <span class="text-lg">🎭</span>
-                            <h3 class="font-semibold text-gray-800">Roles</h3>
+                            <h3 class="font-semibold text-gray-800">Rol (solo uno)</h3>
                         </div>
-                        <span class="px-2 py-1 text-xs text-gray-400 bg-white rounded-full shadow-sm">
-                            {{ $roles->count() }} roles
-                        </span>
                     </div>
                 </div>
-                <div class="p-4 space-y-2 max-h-[400px] overflow-y-auto">
+                <div class="p-4 space-y-2">
                     @foreach($roles as $role)
                     <label class="flex items-center gap-3 p-2 transition rounded-lg cursor-pointer hover:bg-gray-50">
-                        <input type="checkbox" name="roles[]" value="{{ $role->name }}"
-                            class="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-2 focus:ring-indigo-500"
+                        <input type="radio" name="roles[]" value="{{ $role->name }}"
+                            class="w-4 h-4 text-indigo-600 border-gray-300 focus:ring-2 focus:ring-indigo-500"
                             {{ $usuario->hasRole($role->name) ? 'checked' : '' }}>
                         <span class="text-sm text-gray-700">{{ $role->name }}</span>
                     </label>
                     @endforeach
                 </div>
+                <div class="p-3 text-xs text-gray-500 border-t bg-gray-50">
+                    ⚡ Los permisos se asignan automáticamente según el rol seleccionado
+                </div>
             </div>
 
             {{-- Permisos --}}
-            <div class="overflow-hidden bg-white border border-gray-100 shadow-sm lg:col-span-2 rounded-2xl">
+            <div class="overflow-hidden bg-white border shadow-sm lg:col-span-2 rounded-2xl">
                 <div class="p-4 border-b bg-gray-50">
                     <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                         <div class="flex items-center gap-2">
                             <span class="text-lg">🔐</span>
-                            <h3 class="font-semibold text-gray-800">Permisos</h3>
-                            <span class="px-2 py-1 text-xs text-gray-400 bg-white rounded-full shadow-sm">
-                                {{ $permisos->flatten()->count() }} permisos
+                            <h3 class="font-semibold text-gray-800">Permisos adicionales</h3>
+                            <span class="px-2 py-1 text-xs text-gray-400 bg-white rounded-full shadow-sm" id="totalPermisosSpan">
+                                {{ $permisosAgrupados->flatten()->count() }} permisos
                             </span>
                         </div>
                         <div class="flex gap-2">
@@ -114,21 +97,17 @@
                                 class="px-3 py-1.5 text-xs bg-red-500 text-white rounded-lg hover:bg-red-600 transition">
                                 ✕ Ninguno
                             </button>
-                            <button type="button" id="toggleSeleccion"
-                                class="px-3 py-1.5 text-xs bg-amber-500 text-white rounded-lg hover:bg-amber-600 transition">
-                                ↻ Invertir
-                            </button>
                         </div>
                     </div>
                 </div>
 
-                {{-- Buscador de permisos --}}
+                {{-- Buscador --}}
                 <div class="p-4 bg-white border-b">
                     <div class="relative">
                         <svg class="absolute w-4 h-4 text-gray-400 -translate-y-1/2 left-3 top-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
                         </svg>
-                        <input type="text" id="buscarPermiso" placeholder="Buscar permiso por nombre..." 
+                        <input type="text" id="buscarPermiso" placeholder="Buscar permiso..." 
                             class="w-full py-2 pr-4 text-sm border rounded-lg pl-9 focus:ring-2 focus:ring-indigo-500">
                     </div>
                 </div>
@@ -136,37 +115,43 @@
                 {{-- Lista de permisos por módulo --}}
                 <div class="p-4 max-h-[500px] overflow-y-auto">
                     <div class="space-y-4">
-                        @foreach($permisos as $modulo => $items)
-                        <div class="overflow-hidden border border-gray-100 modulo-card rounded-xl">
+                        @foreach($permisosAgrupados  as $modulo => $items)
+                        <div class="overflow-hidden border modulo-card rounded-xl">
                             <div class="flex items-center justify-between p-3 cursor-pointer bg-gray-50 modulo-header">
                                 <div class="flex items-center gap-2">
                                     <span class="text-lg modulo-icon">
-                                        @switch(strtolower($modulo))
-                                            @case('dashboard') 📊 @break
-                                            @case('empresas') 🏢 @break
-                                            @case('licencias') 📜 @break
-                                            @case('inventario') 📦 @break
-                                            @case('compras') 🛒 @break
-                                            @case('proveedores') 🚚 @break
-                                            @case('ventas') 💰 @break
-                                            @case('facturacion') 🧾 @break
-                                            @case('clientes') 👥 @break
-                                            @case('caja') 💵 @break
-                                            @case('cobranza') 📋 @break
-                                            @case('formaspago') 💳 @break
-                                            @case('notificaciones') 🔔 @break
-                                            @case('impresoras') 🖨️ @break
-                                            @case('ticket') 🎫 @break
-                                            @case('usuarios') 🔐 @break
-                                            @case('roles') 🎭 @break
-                                            @case('reportes') 📈 @break
-                                            @case('respaldos') 💾 @break
+                                        @switch($modulo)
+                                            @case('Dashboard') 📊 @break
+                                            @case('Empresas') 🏢 @break
+                                            @case('Licencias') 📜 @break
+                                            @case('Inventario') 📦 @break
+                                            @case('Compras') 🛒 @break
+                                            @case('Proveedores') 🚚 @break
+                                            @case('Ventas') 💰 @break
+                                            @case('Facturacion') 🧾 @break
+                                            @case('Clientes') 👥 @break
+                                            @case('Caja') 💵 @break
+                                            @case('Cobranza') 📋 @break
+                                            @case('FormasPago') 💳 @break
+                                            @case('Notificaciones') 🔔 @break
+                                            @case('Impresoras') 🖨️ @break
+                                            @case('Ticket') 🎫 @break
+                                            @case('Usuarios') 🔐 @break
+                                            @case('Roles') 🎭 @break
+                                            @case('Reportes') 📈 @break
+                                            @case('Respaldos') 💾 @break
+                                            @case('Insumos') 📦 @break
+                                            @case('UnidadesMedida') 📏 @break
                                             @default 📌
                                         @endswitch
                                     </span>
-                                    <span class="text-sm font-semibold text-gray-700 uppercase">{{ str_replace('_', ' ', $modulo) }}</span>
+                                    <span class="text-sm font-semibold text-gray-700 uppercase">{{ $modulo }}</span>
                                 </div>
                                 <div class="flex items-center gap-3">
+                                    <label class="flex items-center gap-1 text-xs text-gray-500 cursor-pointer select-none">
+                                        <input type="checkbox" class="modulo-select-all w-3.5 h-3.5 rounded border-gray-300">
+                                        <span class="ml-1">Seleccionar todos</span>
+                                    </label>
                                     <span class="text-xs text-gray-400 permisos-count">{{ $items->count() }} permisos</span>
                                     <button type="button" class="text-gray-400 modulo-toggle hover:text-gray-600">
                                         <svg class="w-4 h-4 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -177,7 +162,8 @@
                             </div>
                             <div class="grid grid-cols-2 gap-2 p-3 modulo-content md:grid-cols-3 lg:grid-cols-4">
                                 @foreach($items as $permiso)
-                                <label class="permiso-item flex items-center gap-2 p-1.5 rounded-lg hover:bg-indigo-50 cursor-pointer transition" data-permiso="{{ strtolower($permiso->name) }}">
+                                <label class="permiso-item flex items-center gap-2 p-1.5 rounded-lg hover:bg-indigo-50 cursor-pointer transition" 
+                                       data-permiso="{{ strtolower($permiso->name) }}">
                                     <input type="checkbox" name="permisos[]" value="{{ $permiso->name }}"
                                         class="permiso-check w-3.5 h-3.5 text-indigo-600 rounded border-gray-300 focus:ring-2 focus:ring-indigo-500"
                                         {{ $usuario->hasPermissionTo($permiso->name) ? 'checked' : '' }}>
@@ -207,12 +193,11 @@
                     </div>
                 </div>
 
-                {{-- Resumen de selección --}}
+                {{-- Resumen --}}
                 <div class="flex items-center justify-between p-4 text-sm border-t bg-gray-50">
                     <span class="text-gray-500">
-                        <span id="seleccionadosCount">0</span> de <span id="totalPermisos">{{ $permisos->flatten()->count() }}</span> permisos seleccionados
+                        <span id="seleccionadosCount">0</span> de <span id="totalPermisos">{{ $permisosAgrupados ->flatten()->count() }}</span> permisos seleccionados
                     </span>
-                    <span id="modulosSeleccionados" class="text-xs text-gray-400"></span>
                 </div>
             </div>
         </div>
@@ -233,90 +218,102 @@
 
 <script>
 (function() {
-    // Elementos
     const marcarTodosBtn = document.getElementById('marcarTodos');
     const desmarcarTodosBtn = document.getElementById('desmarcarTodos');
-    const toggleSeleccionBtn = document.getElementById('toggleSeleccion');
     const buscarInput = document.getElementById('buscarPermiso');
     const seleccionadosSpan = document.getElementById('seleccionadosCount');
-    const modulosSeleccionadosSpan = document.getElementById('modulosSeleccionados');
+    const totalPermisosSpan = document.getElementById('totalPermisos');
 
-    // Actualizar contador
     function actualizarContador() {
         const checks = document.querySelectorAll('input[name="permisos[]"]');
         const seleccionados = Array.from(checks).filter(cb => cb.checked).length;
-        seleccionadosSpan.textContent = seleccionados;
-        
-        // Contar módulos completos
-        const modulos = document.querySelectorAll('.modulo-card');
-        let modulosCompletos = 0;
-        modulos.forEach(modulo => {
-            const checksModulo = modulo.querySelectorAll('.permiso-check');
-            const totalModulo = checksModulo.length;
-            const seleccionadosModulo = Array.from(checksModulo).filter(cb => cb.checked).length;
-            if (totalModulo > 0 && seleccionadosModulo === totalModulo) {
-                modulosCompletos++;
-            }
-        });
-        modulosSeleccionadosSpan.textContent = modulosCompletos > 0 ? `${modulosCompletos} módulos completos` : '';
+        if (seleccionadosSpan) seleccionadosSpan.textContent = seleccionados;
     }
 
     // Marcar/Desmarcar todos
-    marcarTodosBtn.addEventListener('click', () => {
-        document.querySelectorAll('input[name="permisos[]"]').forEach(cb => cb.checked = true);
-        actualizarContador();
+    if (marcarTodosBtn) {
+        marcarTodosBtn.addEventListener('click', () => {
+            document.querySelectorAll('input[name="permisos[]"]').forEach(cb => cb.checked = true);
+            actualizarContador();
+        });
+    }
+    if (desmarcarTodosBtn) {
+        desmarcarTodosBtn.addEventListener('click', () => {
+            document.querySelectorAll('input[name="permisos[]"]').forEach(cb => cb.checked = false);
+            actualizarContador();
+        });
+    }
+
+    // Seleccionar todos por módulo
+    document.querySelectorAll('.modulo-select-all').forEach(selectAll => {
+        selectAll.addEventListener('change', function() {
+            const moduloCard = this.closest('.modulo-card');
+            const checks = moduloCard.querySelectorAll('.permiso-check');
+            checks.forEach(cb => cb.checked = this.checked);
+            actualizarContador();
+        });
     });
-    desmarcarTodosBtn.addEventListener('click', () => {
-        document.querySelectorAll('input[name="permisos[]"]').forEach(cb => cb.checked = false);
-        actualizarContador();
-    });
-    toggleSeleccionBtn.addEventListener('click', () => {
-        document.querySelectorAll('input[name="permisos[]"]').forEach(cb => cb.checked = !cb.checked);
-        actualizarContador();
+
+    // Actualizar checkbox "Seleccionar todos" cuando cambian los permisos individuales
+    document.querySelectorAll('.permiso-check').forEach(cb => {
+        cb.addEventListener('change', function() {
+            const moduloCard = this.closest('.modulo-card');
+            const checks = moduloCard.querySelectorAll('.permiso-check');
+            const selectAll = moduloCard.querySelector('.modulo-select-all');
+            if (selectAll) {
+                const todosChequeados = Array.from(checks).every(c => c.checked);
+                selectAll.checked = todosChequeados;
+                selectAll.indeterminate = !todosChequeados && Array.from(checks).some(c => c.checked);
+            }
+            actualizarContador();
+        });
     });
 
     // Buscador
-    buscarInput.addEventListener('input', function() {
-        const term = this.value.toLowerCase();
-        document.querySelectorAll('.permiso-item').forEach(item => {
-            const texto = item.getAttribute('data-permiso') || '';
-            if (term === '') {
-                item.style.display = '';
-            } else {
-                item.style.display = texto.includes(term) ? '' : 'none';
-            }
+    if (buscarInput) {
+        buscarInput.addEventListener('input', function() {
+            const term = this.value.toLowerCase();
+            document.querySelectorAll('.permiso-item').forEach(item => {
+                const texto = item.getAttribute('data-permiso') || '';
+                if (term === '') {
+                    item.style.display = '';
+                } else {
+                    item.style.display = texto.includes(term) ? '' : 'none';
+                }
+            });
+            document.querySelectorAll('.modulo-card').forEach(modulo => {
+                const visibles = modulo.querySelectorAll('.permiso-item:not([style*="display: none"])');
+                modulo.style.display = visibles.length > 0 ? '' : 'none';
+            });
         });
-        // Ocultar módulos vacíos
-        document.querySelectorAll('.modulo-card').forEach(modulo => {
-            const visibles = modulo.querySelectorAll('.permiso-item[style=""]');
-            modulo.style.display = visibles.length > 0 ? '' : 'none';
-        });
-    });
+    }
 
     // Toggle módulos
     document.querySelectorAll('.modulo-header').forEach(header => {
         header.addEventListener('click', (e) => {
-            if (e.target.type !== 'checkbox' && !e.target.closest('.modulo-toggle')) {
+            if (e.target.type !== 'checkbox' && !e.target.closest('.modulo-select-all') && !e.target.closest('.modulo-toggle')) {
                 const content = header.nextElementSibling;
                 const icon = header.querySelector('.modulo-toggle svg');
-                content.classList.toggle('hidden');
-                icon.classList.toggle('rotate-180');
+                if (content) {
+                    content.classList.toggle('hidden');
+                    if (icon) icon.classList.toggle('rotate-180');
+                }
             }
         });
     });
 
-    // Eventos de cambio en checkboxes
-    document.querySelectorAll('input[name="permisos[]"]').forEach(cb => {
-        cb.addEventListener('change', actualizarContador);
+    // Inicializar estados de checkboxes "Seleccionar todos"
+    document.querySelectorAll('.modulo-card').forEach(moduloCard => {
+        const checks = moduloCard.querySelectorAll('.permiso-check');
+        const selectAll = moduloCard.querySelector('.modulo-select-all');
+        if (selectAll && checks.length) {
+            const todosChequeados = Array.from(checks).every(c => c.checked);
+            selectAll.checked = todosChequeados;
+            selectAll.indeterminate = !todosChequeados && Array.from(checks).some(c => c.checked);
+        }
     });
 
-    // Inicializar contador
     actualizarContador();
-
-    // Mostrar todos los módulos expandidos por defecto
-    document.querySelectorAll('.modulo-content').forEach(content => {
-        content.classList.remove('hidden');
-    });
 })();
 </script>
 

@@ -8,57 +8,17 @@ use App\Models\CajaArqueo;
 use App\Models\CajaMovimiento;
 use App\Models\CajaTransferencia;
 use App\Models\Sucursal;
+use App\Models\User;
 use App\Services\CajaService;
 use App\Services\TicketService;
+use App\Traits\ActivaTrait;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class CajaController extends Controller
 {
-    private function empresaActivaId()
-    {
-        if (auth()->user()->hasRole('Super Admin')) {
-            return session('empresa_activa_id', auth()->user()->empresa_id);
-        }
-        return auth()->user()->empresa_id;
-    }
-
-    private function sucursalActivaId()
-    {
-        if (auth()->user()->hasRole('Super Admin')) {
-            // Intentar obtener de la sesión
-            $sucursalId = session('sucursal_activa_id');
-
-            // Si no hay sucursal en sesión, obtener la primera sucursal activa de la empresa
-            if (!$sucursalId) {
-                $sucursal = Sucursal::where('empresa_id', $this->empresaActivaId())
-                    ->where('activo', true)
-                    ->first();
-
-                if ($sucursal) {
-                    $sucursalId = $sucursal->id;
-                    session(['sucursal_activa_id' => $sucursalId]);
-                }
-            }
-
-            // Si aún no hay, intentar obtener de la caja abierta del usuario
-            if (!$sucursalId) {
-                $apertura = CajaApertura::where('user_id', auth()->id())
-                    ->where('estado', 'abierta')
-                    ->first();
-
-                if ($apertura) {
-                    $sucursalId = $apertura->sucursal_id;
-                    session(['sucursal_activa_id' => $sucursalId]);
-                }
-            }
-
-            return $sucursalId;
-        }
-
-        return auth()->user()->sucursal_id;
-    }
+    use ActivaTrait;
 
     // ==================== CAJAS ====================
 
@@ -67,6 +27,10 @@ class CajaController extends Controller
         try {
             $empresaId = $this->empresaActivaId();
             $sucursalId = $this->sucursalActivaId();
+
+            if (!$empresaId) {
+                return redirect()->route('dashboard')->with('error', 'No hay una empresa activa.');
+            }
 
             $cajas = Caja::where('empresa_id', $empresaId)
                 ->when($sucursalId, function ($q) use ($sucursalId) {
@@ -145,32 +109,13 @@ class CajaController extends Controller
 
     public function updateCaja(Request $request, Caja $caja)
     {
-        $validated = $request->validate(
-            [
-                'sucursal_id' => 'required|exists:sucursals,id',
-                'nombre' => 'required|string|max:100',
-                'descripcion' => 'nullable|string',
-                'permite_multiple' => 'boolean',
-                'activo' => 'boolean',
-            ],
-            [
-                // sucursal_id
-                'sucursal_id.required' => 'La sucursal es obligatoria.',
-                'sucursal_id.exists' => 'La sucursal seleccionada no existe.',
-
-                // nombre
-                'nombre.required' => 'El nombre es obligatorio.',
-                'nombre.string' => 'El nombre debe ser un texto válido.',
-                'nombre.max' => 'El nombre no puede superar los 100 caracteres.',
-
-                // descripcion
-                'descripcion.string' => 'La descripción debe ser un texto válido.',
-
-                // booleanos
-                'permite_multiple.boolean' => 'El campo "permite múltiple" debe ser verdadero o falso.',
-                'activo.boolean' => 'El campo "activo" debe ser verdadero o falso.',
-            ]
-        );
+        $validated = $request->validate([
+            'sucursal_id' => 'required|exists:sucursals,id',
+            'nombre' => 'required|string|max:100',
+            'descripcion' => 'nullable|string',
+            'permite_multiple' => 'boolean',
+            'activo' => 'boolean',
+        ]);
 
         DB::beginTransaction();
         try {
@@ -192,33 +137,85 @@ class CajaController extends Controller
         }
     }
 
-    // ==================== APERTURA DE CAJA ====================
-
     public function aperturaIndex()
     {
         try {
+            $empresaId = $this->empresaActivaId();
             $sucursalId = $this->sucursalActivaId();
             $userId = auth()->id();
+            $user = auth()->user();
 
-            // Verificar si hay una caja abierta
-            $aperturaActual = CajaApertura::where('sucursal_id', $sucursalId)
-                ->where('user_id', $userId)
-                ->where('estado', 'abierta')
-                ->first();
+            if (!$empresaId) {
+                return redirect()->route('dashboard')->with('error', 'No hay una empresa activa.');
+            }
 
-            // Verificar cajas abiertas de días anteriores
-            $aperturaAnterior = CajaApertura::where('sucursal_id', $sucursalId)
-                ->where('user_id', $userId)
-                ->where('estado', 'abierta')
-                ->whereDate('fecha', '<', today())
-                ->first();
+            if (!$sucursalId) {
+                return redirect()->route('dashboard')->with('error', 'No hay una sucursal activa.');
+            }
 
-            $cajasDisponibles = Caja::where('empresa_id', $this->empresaActivaId())
+            // Para Super Admin: ver TODAS las cajas abiertas en la sucursal
+            if ($user->hasRole('Super Admin')) {
+                $aperturasActivas = CajaApertura::where('empresa_id', $empresaId)
+                    ->where('sucursal_id', $sucursalId)
+                    ->where('estado', 'abierta')
+                    ->with(['caja', 'usuario'])
+                    ->orderBy('created_at', 'desc')
+                    ->get();
+
+                $tieneAperturaPropia = $aperturasActivas->contains('user_id', $userId);
+                $aperturaAnterior = null;
+            } else {
+                // Usuario normal: solo su apertura
+                $aperturasActivas = CajaApertura::where('empresa_id', $empresaId)
+                    ->where('sucursal_id', $sucursalId)
+                    ->where('user_id', $userId)
+                    ->where('estado', 'abierta')
+                    ->with(['caja', 'usuario'])
+                    ->get();
+
+                $tieneAperturaPropia = $aperturasActivas->isNotEmpty();
+                $aperturaAnterior = CajaApertura::where('empresa_id', $empresaId)
+                    ->where('sucursal_id', $sucursalId)
+                    ->where('user_id', $userId)
+                    ->where('estado', 'abierta')
+                    ->whereDate('fecha', '<', today())
+                    ->first();
+            }
+
+            // En aperturaIndex, modifica la obtención de cajas disponibles
+            $cajasDisponibles = Caja::where('empresa_id', $empresaId)
                 ->where('sucursal_id', $sucursalId)
                 ->where('activo', true)
+                ->where(function ($q) use ($user, $userId, $empresaId, $sucursalId) {
+                    $esAdmin = $user->hasRole('Super Admin') || $user->hasRole('Administrador');
+
+                    if ($esAdmin) {
+                        // Admins: solo excluir si ya tienen ESA misma caja abierta
+                        $q->whereNotExists(function ($sub) use ($userId, $empresaId, $sucursalId) {
+                            $sub->select(DB::raw(1))
+                                ->from('caja_aperturas')
+                                ->whereColumn('caja_aperturas.caja_id', 'cajas.id')
+                                ->where('caja_aperturas.user_id', $userId)
+                                ->where('caja_aperturas.empresa_id', $empresaId)
+                                ->where('caja_aperturas.sucursal_id', $sucursalId)
+                                ->where('caja_aperturas.estado', 'abierta');
+                        });
+                    } else {
+                        // Usuarios normales: regla estándar
+                        $q->where(function ($q2) {
+                            $q2->where('permite_multiple', true)
+                                ->orWhere(function ($q3) {
+                                    $q3->where('permite_multiple', false)
+                                        ->whereDoesntHave('aperturaActual', function ($q4) {
+                                            $q4->where('estado', 'abierta');
+                                        });
+                                });
+                        });
+                    }
+                })
                 ->get();
 
-            return view('cajas.apertura', compact('aperturaActual', 'aperturaAnterior', 'cajasDisponibles'));
+            return view('cajas.apertura', compact('aperturasActivas', 'cajasDisponibles', 'tieneAperturaPropia', 'aperturaAnterior'));
         } catch (\Exception $e) {
             Log::error('Error al cargar apertura: ' . $e->getMessage());
             return back()->with('error', 'Error al cargar la apertura de caja.');
@@ -227,93 +224,58 @@ class CajaController extends Controller
 
     public function abrirCaja(Request $request)
     {
+        $isAjax = $request->ajax() || $request->wantsJson();
+
         $validated = $request->validate([
             'caja_id' => 'required|exists:cajas,id',
             'monto_inicial' => 'required|numeric|min:0',
             'observaciones' => 'nullable|string',
         ]);
 
-        try {
-            $apertura = CajaService::abrirCaja(
-                $validated['caja_id'],
-                auth()->id(),
-                $this->sucursalActivaId(),
-                $validated['monto_inicial'],
-                $validated['observaciones'] ?? null
-            );
+        $sucursalId = $this->sucursalActivaId();
+        $empresaId = $this->empresaActivaId();
 
-            return redirect()->route('cajas.operaciones')
-                ->with('success', 'Caja abierta correctamente. ID de apertura: ' . $apertura->id);
-        } catch (\Exception $e) {
-            return back()->with('error', $e->getMessage());
+        if (!$sucursalId) {
+            $error = 'No hay una sucursal activa.';
+            return $isAjax
+                ? response()->json(['success' => false, 'message' => $error], 400)
+                : back()->with('error', $error);
         }
-    }
 
-    public function cerrarCaja(Request $request)
-    {
-        $validated = $request->validate([
-            'apertura_id' => 'required|exists:caja_aperturas,id',
-            'monto_final' => 'required|numeric|min:0',
-            'observaciones' => 'nullable|string',
-        ]);
+        if (!$empresaId) {
+            $error = 'No hay una empresa activa.';
+            return $isAjax
+                ? response()->json(['success' => false, 'message' => $error], 400)
+                : back()->with('error', $error);
+        }
 
         try {
-            DB::beginTransaction();
-
-            $apertura = CajaApertura::findOrFail($validated['apertura_id']);
-
-            // Verificar retiros pendientes de autorización
-            $retirosPendientes = CajaMovimiento::where('caja_apertura_id', $apertura->id)
-                ->where('tipo', 'egreso')
-                ->where('categoria', 'retiro_parcial')
-                ->where('requiere_autorizacion', true)
-                ->whereNull('autorizado_por')
-                ->sum('monto');
-
-            if ($retirosPendientes > 0) {
-                return back()->with('error', "Hay retiros pendientes de autorización por $$retirosPendientes. Debes autorizarlos antes de cerrar la caja.");
-            }
-
-            // Calcular saldo esperado
-            $saldoEsperado = $apertura->monto_inicial + $apertura->total_ingresos - $apertura->total_egresos;
-
-            // Si el monto final es menor al saldo esperado, se debe retirar la diferencia
-            if ($validated['monto_final'] < $saldoEsperado) {
-                $diferencia = $saldoEsperado - $validated['monto_final'];
-
-                // Registrar retiro final
-                $movimiento = CajaMovimiento::create([
-                    'caja_apertura_id' => $apertura->id,
-                    'user_id' => auth()->id(),
-                    'sucursal_id' => $apertura->sucursal_id,
-                    'tipo' => 'egreso',
-                    'categoria' => 'retiro_final',
-                    'forma_pago' => 'efectivo',
-                    'monto' => $diferencia,
-                    'concepto' => "RETIRO FINAL DE CIERRE DE CAJA",
-                    'referencia' => "CIERRE-{$apertura->id}",
-                    'requiere_autorizacion' => false
-                ]);
-
-                // Actualizar totales de la apertura
-                $apertura->increment('total_egresos', $diferencia);
-            }
-
-            // Cerrar la caja
-            CajaService::cerrarCaja(
-                $validated['apertura_id'],
-                $validated['monto_final'],
-                $validated['observaciones'] ?? null
+            // 🔥 IMPORTANTE: Los 6 argumentos en el orden correcto
+            $apertura = CajaService::abrirCaja(
+                $validated['caja_id'],      // $cajaId
+                auth()->id(),                // $userId
+                $sucursalId,                 // $sucursalId
+                $empresaId,                  // $empresaId
+                $validated['monto_inicial'], // $montoInicial
+                $validated['observaciones'] ?? null  // $observaciones
             );
 
-            DB::commit();
+            $mensaje = 'Caja abierta correctamente.';
 
-            return redirect()->route('cajas.apertura')
-                ->with('success', 'Caja cerrada correctamente.');
+            if ($isAjax) {
+                return response()->json([
+                    'success' => true,
+                    'message' => $mensaje,
+                    'redirect' => route('cajas.operaciones')
+                ]);
+            }
+
+            return redirect()->route('cajas.operaciones')->with('success', $mensaje);
 
         } catch (\Exception $e) {
-            DB::rollBack();
-            return back()->with('error', $e->getMessage());
+            return $isAjax
+                ? response()->json(['success' => false, 'message' => $e->getMessage()], 500)
+                : back()->with('error', $e->getMessage());
         }
     }
 
@@ -322,27 +284,51 @@ class CajaController extends Controller
     public function operaciones()
     {
         try {
+            $empresaId = $this->empresaActivaId();
             $sucursalId = $this->sucursalActivaId();
             $userId = auth()->id();
+            $user = auth()->user();
 
-            $apertura = CajaApertura::where('sucursal_id', $sucursalId)
-                ->where('user_id', $userId)
-                ->where('estado', 'abierta')
-                ->first();
-
-            if (!$apertura) {
-                return redirect()->route('cajas.apertura')
-                    ->with('error', 'No tienes una caja abierta. Debes abrir una caja primero.');
+            if (!$empresaId) {
+                return redirect()->route('dashboard')->with('error', 'No hay una empresa activa.');
             }
 
+            // Para Super Admin: obtener la primera apertura abierta de la sucursal (o todas)
+            if ($user->hasRole('Super Admin')) {
+                // Opción 1: Mostrar todas las aperturas abiertas en lugar de una sola
+                $aperturas = CajaApertura::where('empresa_id', $empresaId)
+                    ->where('sucursal_id', $sucursalId)
+                    ->where('estado', 'abierta')
+                    ->with(['caja', 'usuario'])
+                    ->get();
+
+                if ($aperturas->isEmpty()) {
+                    return redirect()->route('cajas.apertura')
+                        ->with('error', 'No hay cajas abiertas en esta sucursal.');
+                }
+
+                // Si hay múltiples, podrías mostrar un selector o tomar la primera
+                $apertura = $aperturas->first(); // o pasar $aperturas a la vista
+            } else {
+                // Usuario normal: solo su propia apertura
+                $apertura = CajaApertura::where('empresa_id', $empresaId)
+                    ->where('sucursal_id', $sucursalId)
+                    ->where('user_id', $userId)
+                    ->where('estado', 'abierta')
+                    ->first();
+
+                if (!$apertura) {
+                    return redirect()->route('cajas.apertura')
+                        ->with('error', 'No tienes una caja abierta. Debes abrir una caja primero.');
+                }
+            }
+
+            // Resto del código...
             $movimientos = CajaMovimiento::where('caja_apertura_id', $apertura->id)
                 ->orderBy('created_at', 'desc')
                 ->paginate(20);
 
             $resumen = CajaService::resumenDia($apertura->id);
-
-            // Obtener formas de pago activas
-            $empresaId = $this->empresaActivaId();
             $formasPago = \App\Models\FormaPago::where('empresa_id', $empresaId)
                 ->where('activo', true)
                 ->orderBy('orden')
@@ -393,15 +379,25 @@ class CajaController extends Controller
     public function autorizacionesPendientes()
     {
         try {
+            $empresaId = $this->empresaActivaId();
             $sucursalId = $this->sucursalActivaId();
 
             $movimientosPendientes = CajaMovimiento::where('requiere_autorizacion', true)
                 ->whereNull('autorizado_por')
+                ->whereHas('cajaApertura', function ($q) use ($empresaId, $sucursalId) {
+                    $q->where('empresa_id', $empresaId);
+                    if ($sucursalId) {
+                        $q->where('sucursal_id', $sucursalId);
+                    }
+                })
                 ->with(['cajaApertura', 'usuario'])
                 ->orderBy('created_at')
                 ->paginate(20);
 
             $transferenciasPendientes = CajaTransferencia::where('estado', 'pendiente')
+                ->whereHas('cajaOrigen', function ($q) use ($empresaId) {
+                    $q->where('empresa_id', $empresaId);
+                })
                 ->with(['cajaOrigen', 'cajaDestino', 'usuario'])
                 ->orderBy('created_at')
                 ->paginate(20);
@@ -438,10 +434,13 @@ class CajaController extends Controller
     public function transferencias()
     {
         try {
+            $empresaId = $this->empresaActivaId();
             $sucursalId = $this->sucursalActivaId();
 
-            $cajas = Caja::where('empresa_id', $this->empresaActivaId())
-                ->where('sucursal_id', $sucursalId)
+            $cajas = Caja::where('empresa_id', $empresaId)
+                ->when($sucursalId, function ($q) use ($sucursalId) {
+                    return $q->where('sucursal_id', $sucursalId);
+                })
                 ->where('activo', true)
                 ->get();
 
@@ -503,11 +502,14 @@ class CajaController extends Controller
     {
         try {
             $empresaId = $this->empresaActivaId();
-
             $resumen = CajaService::resumenDia($aperturaId);
             $apertura = CajaApertura::with(['caja', 'usuario', 'movimientos', 'sucursal'])->findOrFail($aperturaId);
 
-            // Obtener formas de pago activas para mostrar iconos
+            // Verificar que la apertura pertenezca a la empresa activa
+            if ($apertura->empresa_id != $empresaId) {
+                return back()->with('error', 'No tienes permiso para ver este reporte.');
+            }
+
             $formasPago = \App\Models\FormaPago::where('empresa_id', $empresaId)
                 ->where('activo', true)
                 ->orderBy('orden')
@@ -525,21 +527,29 @@ class CajaController extends Controller
     public function arqueos()
     {
         try {
+            $empresaId = $this->empresaActivaId();
             $sucursalId = $this->sucursalActivaId();
             $userId = auth()->id();
+            $user = auth()->user();
 
-            $apertura = CajaApertura::where('sucursal_id', $sucursalId)
-                ->where('user_id', $userId)
-                ->where('estado', 'abierta')
-                ->first();
+            if ($user->hasRole('Super Admin')) {
+                $apertura = CajaApertura::where('empresa_id', $empresaId)
+                    ->where('sucursal_id', $sucursalId)
+                    ->where('estado', 'abierta')
+                    ->first();
+            } else {
+                $apertura = CajaApertura::where('empresa_id', $empresaId)
+                    ->where('sucursal_id', $sucursalId)
+                    ->where('user_id', $userId)
+                    ->where('estado', 'abierta')
+                    ->first();
+            }
 
             if (!$apertura) {
                 return redirect()->route('cajas.apertura')
-                    ->with('error', 'No tienes una caja abierta. Debes abrir una caja primero.');
+                    ->with('error', 'No hay una caja abierta en esta sucursal.');
             }
 
-            // Obtener formas de pago activas
-            $empresaId = $this->empresaActivaId();
             $formasPago = \App\Models\FormaPago::where('empresa_id', $empresaId)
                 ->where('activo', true)
                 ->orderBy('orden')
@@ -551,7 +561,6 @@ class CajaController extends Controller
                 $totalesSistema[$forma->clave] = 0;
             }
 
-            // Calcular ingresos del sistema por forma de pago
             $ingresosSistema = CajaMovimiento::where('caja_apertura_id', $apertura->id)
                 ->where('tipo', 'ingreso')
                 ->select('forma_pago', DB::raw('SUM(monto) as total'))
@@ -564,7 +573,6 @@ class CajaController extends Controller
                 }
             }
 
-            // Calcular egresos del sistema por forma de pago
             $egresosSistema = [];
             foreach ($formasPago as $forma) {
                 $egresosSistema[$forma->clave] = 0;
@@ -603,14 +611,17 @@ class CajaController extends Controller
             DB::beginTransaction();
 
             $apertura = CajaApertura::findOrFail($request->apertura_id);
-
-            // Obtener formas de pago activas
             $empresaId = $this->empresaActivaId();
+
+            // Verificar que la apertura pertenezca a la empresa activa
+            if ($apertura->empresa_id != $empresaId) {
+                throw new \Exception('No tienes permiso para registrar arqueo en esta apertura.');
+            }
+
             $formasPago = \App\Models\FormaPago::where('empresa_id', $empresaId)
                 ->where('activo', true)
                 ->get();
 
-            // Validar y construir array de montos contados
             $montosContado = [];
             $totalContado = 0;
 
@@ -621,16 +632,13 @@ class CajaController extends Controller
                 $totalContado += $monto;
             }
 
-            // Validar que efectivo sea > 0
             if (($montosContado['efectivo'] ?? 0) <= 0) {
                 throw new \Exception('El campo Efectivo contado es obligatorio y debe ser mayor a 0.');
             }
 
-            // Calcular total sistema
             $totalSistema = $apertura->monto_inicial + $apertura->total_ingresos - $apertura->total_egresos;
             $diferencia = $totalContado - $totalSistema;
 
-            // Registrar arqueo
             $arqueo = CajaArqueo::create([
                 'caja_apertura_id' => $apertura->id,
                 'user_id' => auth()->id(),
@@ -649,10 +657,10 @@ class CajaController extends Controller
                 'estado' => $request->estado
             ]);
 
-            // === SI HAY SOBRANTE, SE RETIRA DE LA CAJA ===
+            $mensajeRetiro = "";
+
             if ($diferencia > 0.01) {
-                // Registrar movimiento de retiro por el sobrante
-                $movimiento = CajaMovimiento::create([
+                CajaMovimiento::create([
                     'caja_apertura_id' => $apertura->id,
                     'user_id' => auth()->id(),
                     'sucursal_id' => $apertura->sucursal_id,
@@ -665,18 +673,11 @@ class CajaController extends Controller
                     'requiere_autorizacion' => false
                 ]);
 
-                // Actualizar totales de la apertura
                 $apertura->increment('total_egresos', $diferencia);
-
-                // ACTUALIZAR SALDO DE LA CAJA (se resta el sobrante)
                 $apertura->caja->decrement('saldo_actual', $diferencia);
-
                 $mensajeRetiro = " Se retiró el sobrante de $" . number_format($diferencia, 2) . " de la caja.";
-            } else {
-                $mensajeRetiro = "";
             }
 
-            // Si hay faltante, solo se registra (NO se ajusta la caja)
             if ($diferencia < -0.01) {
                 $mensajeRetiro = " Se detectó un faltante de $" . number_format(abs($diferencia), 2) . ". Verifica la diferencia.";
             }
@@ -686,11 +687,9 @@ class CajaController extends Controller
             $mensaje = $arqueo->estado == 'finalizado'
                 ? 'Arqueo finalizado correctamente.'
                 : 'Arqueo guardado como borrador.';
-
             $mensaje .= $mensajeRetiro;
 
-            return redirect()->route('cajas.arqueos')
-                ->with('success', $mensaje);
+            return redirect()->route('cajas.arqueos')->with('success', $mensaje);
 
         } catch (\Exception $e) {
             DB::rollBack();
@@ -709,7 +708,9 @@ class CajaController extends Controller
             return back()->with('error', 'Error al cargar el arqueo.');
         }
     }
-    // Método para imprimir ticket de movimiento
+
+    // ==================== TICKETS ====================
+
     public function imprimirTicketMovimiento(CajaMovimiento $movimiento)
     {
         try {
@@ -722,7 +723,6 @@ class CajaController extends Controller
         }
     }
 
-    // Método para imprimir ticket de transferencia
     public function imprimirTicketTransferencia(CajaTransferencia $transferencia)
     {
         try {
@@ -735,7 +735,6 @@ class CajaController extends Controller
         }
     }
 
-    // Método para imprimir ticket de arqueo
     public function imprimirTicketArqueo(CajaArqueo $arqueo)
     {
         try {
@@ -748,7 +747,6 @@ class CajaController extends Controller
         }
     }
 
-    // Método para imprimir ticket de cierre
     public function imprimirTicketCierre($aperturaId)
     {
         try {
@@ -761,14 +759,11 @@ class CajaController extends Controller
             return back()->with('error', 'Error al generar el ticket: ' . $e->getMessage());
         }
     }
-    // Agregar después del método imprimirTicketArqueo
 
     public function imprimirArqueo(CajaArqueo $arqueo)
     {
         try {
             $arqueo->load(['cajaApertura.caja', 'usuario', 'sucursal']);
-
-            // Obtener formas de pago activas
             $empresaId = $this->empresaActivaId();
             $formasPago = \App\Models\FormaPago::where('empresa_id', $empresaId)
                 ->where('activo', true)
@@ -781,9 +776,7 @@ class CajaController extends Controller
             return back()->with('error', 'Error al generar la impresión del arqueo.');
         }
     }
-    /**
-     * Registrar retiro parcial de caja
-     */
+
     public function registrarRetiro(Request $request)
     {
         try {
@@ -799,18 +792,21 @@ class CajaController extends Controller
             ]);
 
             $apertura = CajaApertura::findOrFail($validated['apertura_id']);
+            $empresaId = $this->empresaActivaId();
+
+            if ($apertura->empresa_id != $empresaId) {
+                throw new \Exception('No tienes permiso para registrar retiros en esta apertura.');
+            }
 
             if ($apertura->estado !== 'abierta') {
                 throw new \Exception('La caja no está abierta.');
             }
 
-            // Verificar saldo suficiente
             $saldoActual = $apertura->saldoActual();
             if ($saldoActual < $validated['monto']) {
                 throw new \Exception("Saldo insuficiente. Saldo actual: $" . number_format($saldoActual, 2));
             }
 
-            // Registrar movimiento de retiro
             $movimiento = CajaMovimiento::create([
                 'caja_apertura_id' => $apertura->id,
                 'user_id' => auth()->id(),
@@ -824,10 +820,8 @@ class CajaController extends Controller
                 'requiere_autorizacion' => $validated['requiere_autorizacion'] ?? false
             ]);
 
-            // Actualizar totales de la apertura
             $apertura->increment('total_egresos', $validated['monto']);
 
-            // Si no requiere autorización, actualizar saldo inmediatamente
             if (!$movimiento->requiere_autorizacion) {
                 $apertura->caja->decrement('saldo_actual', $validated['monto']);
             }
@@ -839,12 +833,222 @@ class CajaController extends Controller
                 $mensaje = 'Retiro registrado. Requiere autorización de un administrador.';
             }
 
-            return redirect()->route('cajas.operaciones')
-                ->with('success', $mensaje);
+            return redirect()->route('cajas.operaciones')->with('success', $mensaje);
 
         } catch (\Exception $e) {
             DB::rollBack();
             Log::error('Error al registrar retiro: ' . $e->getMessage());
+            return back()->with('error', $e->getMessage());
+        }
+    }
+    // app/Models/CajaApertura.php
+    public static function getAperturaActual($empresaId, $sucursalId, $userId = null)
+    {
+        $query = self::where('empresa_id', $empresaId)
+            ->where('sucursal_id', $sucursalId)
+            ->where('estado', 'abierta');
+
+        // Si no es Super Admin, filtrar por usuario
+        if (!auth()->user()->hasRole('Super Admin')) {
+            $query->where('user_id', $userId);
+        }
+
+        return $query->first();
+    }
+    /**
+     * Ver detalles de una apertura específica (solo lectura)
+     */
+    public function verApertura(CajaApertura $apertura)
+    {
+        try {
+            $empresaId = $this->empresaActivaId();
+
+            // Verificar que la apertura pertenezca a la empresa activa
+            if ($apertura->empresa_id != $empresaId) {
+                return redirect()->route('cajas.apertura')
+                    ->with('error', 'No tienes permiso para ver esta apertura.');
+            }
+
+            $apertura->load([
+                'caja',
+                'usuario',
+                'movimientos' => function ($q) {
+                    $q->orderBy('created_at', 'desc')->limit(50);
+                },
+                'sucursal'
+            ]);
+
+            return view('cajas.ver-apertura', compact('apertura'));
+        } catch (\Exception $e) {
+            Log::error('Error al ver apertura: ' . $e->getMessage());
+            return back()->with('error', 'Error al cargar la apertura.');
+        }
+    }
+    /**
+     * Cerrar una caja abierta
+     */
+    /**
+     * Cerrar una caja abierta
+     */
+    public function cerrarCaja(Request $request)
+    {
+        // Detectar si es petición AJAX
+        $isAjax = $request->ajax() || $request->wantsJson();
+
+        $validated = $request->validate([
+            'apertura_id' => 'required|exists:caja_aperturas,id',
+            'monto_final' => 'required|numeric|min:0',
+            'observaciones' => 'nullable|string',
+            'password_maestra' => 'nullable|string',
+        ]);
+
+        try {
+            DB::beginTransaction();
+
+            $user = auth()->user();
+            $empresaId = $this->empresaActivaId();
+            $sucursalId = $this->sucursalActivaId();
+
+            if (!$empresaId) {
+                throw new \Exception('No hay una empresa activa. Por favor, selecciona una empresa.');
+            }
+
+            if (!$sucursalId) {
+                throw new \Exception('No hay una sucursal activa. Por favor, selecciona una sucursal.');
+            }
+
+            $apertura = CajaApertura::where('id', $validated['apertura_id'])
+                ->where('empresa_id', $empresaId)
+                ->where('sucursal_id', $sucursalId)
+                ->firstOrFail();
+
+            if ($apertura->estado !== 'abierta') {
+                throw new \Exception('Esta caja ya está cerrada o fue suspendida.');
+            }
+
+            // Permisos
+            if (!$user->hasRole('Super Admin') && $apertura->user_id != $user->id) {
+                throw new \Exception('No tienes permiso para cerrar esta caja. Solo puedes cerrar tus propias aperturas.');
+            }
+
+            if ($user->hasRole('Super Admin') && $apertura->user_id != $user->id) {
+                if (empty($validated['password_maestra'])) {
+                    throw new \Exception('Debes ingresar la contraseña maestra para cerrar una caja de otro usuario.');
+                }
+                // Aquí valida la contraseña maestra si tienes implementado
+                // if (!Hash::check($validated['password_maestra'], $user->contrasena_maestra)) {
+                //     throw new \Exception('Contraseña maestra incorrecta.');
+                // }
+            }
+
+            // Verificar retiros pendientes
+            $retirosPendientes = CajaMovimiento::where('caja_apertura_id', $apertura->id)
+                ->where('tipo', 'egreso')
+                ->where('categoria', 'retiro_parcial')
+                ->where('requiere_autorizacion', true)
+                ->whereNull('autorizado_por')
+                ->sum('monto');
+
+            if ($retirosPendientes > 0) {
+                throw new \Exception("Hay retiros pendientes de autorización por $" . number_format($retirosPendientes, 2) . ". Debes autorizarlos antes de cerrar la caja.");
+            }
+
+            // Calcular y registrar retiro final si es necesario
+            $saldoEsperado = $apertura->monto_inicial + $apertura->total_ingresos - $apertura->total_egresos;
+
+            if ($validated['monto_final'] < $saldoEsperado) {
+                $diferencia = $saldoEsperado - $validated['monto_final'];
+
+                CajaMovimiento::create([
+                    'caja_apertura_id' => $apertura->id,
+                    'user_id' => $user->id,
+                    'sucursal_id' => $apertura->sucursal_id,
+                    'tipo' => 'egreso',
+                    'categoria' => 'retiro_final',
+                    'forma_pago' => 'efectivo',
+                    'monto' => $diferencia,
+                    'concepto' => "RETIRO FINAL DE CIERRE DE CAJA",
+                    'referencia' => "CIERRE-{$apertura->id}",
+                    'requiere_autorizacion' => false
+                ]);
+
+                $apertura->increment('total_egresos', $diferencia);
+            }
+
+            // Construir observaciones finales
+            $observacionesFinal = $validated['observaciones'] ?? '';
+            if ($user->hasRole('Super Admin') && $apertura->user_id != $user->id) {
+                $observacionesFinal = "[CIERRE POR ADMIN: {$user->name}] " . $observacionesFinal;
+            }
+
+            // Cerrar la caja
+            CajaService::cerrarCaja(
+                $validated['apertura_id'],
+                $validated['monto_final'],
+                $observacionesFinal
+            );
+
+            DB::commit();
+
+            $mensaje = '✅ Caja cerrada correctamente.';
+            if ($user->hasRole('Super Admin') && $apertura->user_id != $user->id) {
+                $usuarioNombre = $apertura->usuario->name ?? 'otro usuario';
+                $mensaje = "✅ Caja cerrada correctamente por Administrador. La caja pertenecía a: {$usuarioNombre}";
+            }
+
+            if ($isAjax) {
+                return response()->json([
+                    'success' => true,
+                    'icon' => 'success',
+                    'title' => '¡Caja cerrada!',
+                    'message' => $mensaje,
+                    'redirect' => route('cajas.apertura')
+                ]);
+            }
+
+            return redirect()->route('cajas.apertura')->with('success', $mensaje);
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            DB::rollBack();
+            $errors = $e->errors();
+            $firstError = reset($errors)[0] ?? 'Error de validación';
+
+            if ($isAjax) {
+                return response()->json([
+                    'success' => false,
+                    'icon' => 'error',
+                    'title' => 'Error de validación',
+                    'message' => $firstError
+                ], 422);
+            }
+            return back()->withErrors($e->errors())->withInput();
+
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            DB::rollBack();
+            $error = '❌ No se encontró la apertura de caja o no pertenece a tu empresa/sucursal activa.';
+
+            if ($isAjax) {
+                return response()->json([
+                    'success' => false,
+                    'icon' => 'error',
+                    'title' => 'No encontrado',
+                    'message' => $error
+                ], 404);
+            }
+            return back()->with('error', $error);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Error al cerrar caja: ' . $e->getMessage());
+
+            if ($isAjax) {
+                return response()->json([
+                    'success' => false,
+                    'icon' => 'error',
+                    'title' => 'Error al cerrar caja',
+                    'message' => $e->getMessage()
+                ], 500);
+            }
             return back()->with('error', $e->getMessage());
         }
     }

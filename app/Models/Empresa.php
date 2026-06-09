@@ -28,14 +28,6 @@ class Empresa extends Model
         'fecha_fin' => 'date'
     ];
 
-   // Accessor para obtener la URL del logo
-    public function getLogoUrlAttribute()
-    {
-        if ($this->logo && Storage::disk('public')->exists($this->logo)) {
-            return Storage::url($this->logo);
-        }
-        return null;
-    }
     public function licencia()
     {
         return $this->belongsTo(Licencia::class, 'licencia_id');
@@ -54,5 +46,29 @@ class Empresa extends Model
     public function licenciaVigente(): bool
     {
         return $this->activo && $this->fecha_fin >= now();
+    }
+    // Accessor para obtener la URL completa del logo
+    public function getLogoUrlAttribute()
+    {
+        if ($this->logo && Storage::disk('public')->exists($this->logo)) {
+            return Storage::url($this->logo);
+        }
+        return null;
+    }
+
+    // Método para eliminar el logo del almacenamiento
+    public function deleteLogo()
+    {
+        if ($this->logo && Storage::disk('public')->exists($this->logo)) {
+            Storage::disk('public')->delete($this->logo);
+        }
+        $this->logo = null;
+        $this->save();
+    }
+    protected static function booted()
+    {
+        static::deleting(function ($empresa) {
+            $empresa->deleteLogo();
+        });
     }
 }

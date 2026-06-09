@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Storage;
 
 class TicketConfiguracion extends Model
 {
@@ -53,22 +54,31 @@ class TicketConfiguracion extends Model
         return $this->belongsTo(Empresa::class);
     }
 
-    /**
-     * Scope para obtener configuración activa por tipo
-     */
     public function scopeActiva($query)
     {
         return $query->where('activo', true);
     }
 
-    /**
-     * Obtener configuración por empresa y tipo
-     */
-    public static function obtener(int $empresaId, string $tipo)
+     public static function obtener(int $empresaId, string $tipo)
     {
         return self::where('empresa_id', $empresaId)
             ->where('tipo', $tipo)
             ->where('activo', true)
             ->first();
+    }
+
+   // Accessor: devuelve la URL del logo (propio o de la empresa)
+    public function getLogoUrlAttribute($value)
+    {
+        // Si hay logo propio y existe, usarlo
+        if ($value && Storage::disk('public')->exists($value)) {
+            return Storage::url($value);
+        }
+        // Si no, usar el logo de la empresa
+        if ($this->empresa && $this->empresa->logo_url) {
+            return $this->empresa->logo_url;
+        }
+         // Tercero, logo por defecto (ruta pública)
+        return asset('logo/LogoAdmin.png');
     }
 }

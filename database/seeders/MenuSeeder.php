@@ -68,10 +68,6 @@ class MenuSeeder extends Seeder
                 ['modulo_id' => $inventario->id, 'menu_padre_id' => $catInventario->id, 'nombre' => 'Unidades de medida'],
                 ['ruta' => '/unidades-medida', 'orden' => 4, 'activo' => true]
             );
-            Menu::firstOrCreate(
-                ['modulo_id' => $inventario->id, 'menu_padre_id' => $catInventario->id, 'nombre' => 'Movimientos'],
-                ['ruta' => '/movimientos', 'orden' => 5, 'activo' => true]
-            );
         }
 
         // ===== COMPRAS =====
@@ -272,7 +268,7 @@ class MenuSeeder extends Seeder
             );
             Menu::firstOrCreate(
                 ['modulo_id' => $ticket->id, 'menu_padre_id' => $menuTicket->id, 'nombre' => 'Diseño'],
-                ['ruta' => '/ticket/diseno', 'orden' => 2, 'activo' => true]
+                ['ruta' => '/ticket/diseno', 'orden' => 2, 'activo' => true] 
             );
         }
 
@@ -316,10 +312,6 @@ class MenuSeeder extends Seeder
             Menu::firstOrCreate(
                 ['modulo_id' => $respaldos->id, 'nombre' => 'Generar respaldo'],
                 ['ruta' => '/respaldos', 'icono' => '💾', 'orden' => 1, 'activo' => true]
-            );
-            Menu::firstOrCreate(
-                ['modulo_id' => $respaldos->id, 'nombre' => 'Importar'],
-                ['ruta' => '/respaldos/importar', 'icono' => '📥', 'orden' => 2, 'activo' => true]
             );
         }
     }

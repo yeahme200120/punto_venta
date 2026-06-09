@@ -12,9 +12,6 @@ use Spatie\Permission\Models\Role;
 
 class RoleController extends Controller
 {
-    /**
-     * Obtener el ID de la empresa activa desde la sesión
-     */
     private function empresaActivaId()
     {
         if (auth()->user()->hasRole('Super Admin')) {
@@ -24,19 +21,26 @@ class RoleController extends Controller
     }
 
     /**
-     * Listado de roles
+     * Listado de roles - Ocultar Super Admin para no Super Admin
      */
     public function index()
     {
         try {
             $empresaId = $this->empresaActivaId();
             $empresaActiva = \App\Models\Empresa::find($empresaId);
+            $currentUser = auth()->user();
 
-            $roles = Role::withCount('users')
+            $query = Role::withCount('users')
                 ->with(['permissions', 'users' => function ($query) use ($empresaId) {
                     $query->where('empresa_id', $empresaId);
-                }])
-                ->orderBy('name')
+                }]);
+
+            // Si NO es Super Admin, excluir el rol Super Admin
+            if (!$currentUser->hasRole('Super Admin')) {
+                $query->where('name', '!=', 'Super Admin');
+            }
+
+            $roles = $query->orderBy('name')
                 ->paginate(10)
                 ->withQueryString();
 
@@ -44,17 +48,35 @@ class RoleController extends Controller
 
         } catch (\Exception $e) {
             Log::error('Error al listar roles: ' . $e->getMessage());
-            return back()->with('error', 'Error al cargar la lista de roles. Intente nuevamente.');
+            return back()->with('error', 'Error al cargar la lista de roles.');
         }
     }
 
     /**
-     * Formulario de creación
+     * Formulario de creación - No permitir crear rol Super Admin para no Super Admin
      */
     public function create()
     {
         try {
-            $permisos = Permission::all()->groupBy(function ($permiso) {
+            $currentUser = auth()->user();
+            
+            // Si no es Super Admin, no puede crear el rol Super Admin
+            $permisos = Permission::all();
+            
+            if (!$currentUser->hasRole('Super Admin')) {
+                // Excluir permisos de módulos restringidos
+                $excluirModulos = ['empresas', 'licencias', 'notificaciones', 'impresoras'];
+                $permisos = $permisos->filter(function($permiso) use ($excluirModulos) {
+                    foreach ($excluirModulos as $modulo) {
+                        if (str_contains($permiso->name, $modulo)) {
+                            return false;
+                        }
+                    }
+                    return true;
+                });
+            }
+            
+            $permisos = $permisos->groupBy(function ($permiso) {
                 $partes = explode('_', $permiso->name);
                 array_shift($partes);
                 return implode('_', $partes) ?: 'otros';
@@ -69,10 +91,17 @@ class RoleController extends Controller
     }
 
     /**
-     * Almacenar nuevo rol
+     * Almacenar nuevo rol - No permitir crear Super Admin
      */
     public function store(Request $request)
     {
+        $currentUser = auth()->user();
+        
+        // Validar que no se pueda crear el rol Super Admin si no es Super Admin
+        if (!$currentUser->hasRole('Super Admin') && $request->name === 'Super Admin') {
+            return back()->withInput()->with('error', 'No tienes permiso para crear el rol Super Administrador.');
+        }
+
         $validated = $request->validate([
             'name' => 'required|string|unique:roles,name',
         ], [
@@ -103,11 +132,18 @@ class RoleController extends Controller
     }
 
     /**
-     * Mostrar detalle de rol
+     * Mostrar detalle de rol - No permitir ver Super Admin
      */
     public function show(Role $role)
     {
         try {
+            $currentUser = auth()->user();
+            
+            // Si no es Super Admin y el rol es Super Admin, denegar acceso
+            if (!$currentUser->hasRole('Super Admin') && $role->name === 'Super Admin') {
+                abort(403, 'No tienes permiso para ver el rol Super Administrador.');
+            }
+            
             $empresaId = $this->empresaActivaId();
 
             $role->load(['permissions', 'users' => function ($query) use ($empresaId) {
@@ -129,12 +165,34 @@ class RoleController extends Controller
     }
 
     /**
-     * Formulario de edición
+     * Formulario de edición - No permitir editar Super Admin
      */
     public function edit(Role $role)
     {
         try {
-            $permisos = Permission::all()->groupBy(function ($permiso) {
+            $currentUser = auth()->user();
+            
+            // Si no es Super Admin y el rol es Super Admin, denegar acceso
+            if (!$currentUser->hasRole('Super Admin') && $role->name === 'Super Admin') {
+                abort(403, 'No tienes permiso para editar el rol Super Administrador.');
+            }
+            
+            $permisos = Permission::all();
+            
+            if (!$currentUser->hasRole('Super Admin')) {
+                // Excluir permisos de módulos restringidos
+                $excluirModulos = ['empresas', 'licencias', 'notificaciones', 'impresoras'];
+                $permisos = $permisos->filter(function($permiso) use ($excluirModulos) {
+                    foreach ($excluirModulos as $modulo) {
+                        if (str_contains($permiso->name, $modulo)) {
+                            return false;
+                        }
+                    }
+                    return true;
+                });
+            }
+            
+            $permisos = $permisos->groupBy(function ($permiso) {
                 $partes = explode('_', $permiso->name);
                 array_shift($partes);
                 return implode('_', $partes) ?: 'otros';
@@ -149,10 +207,22 @@ class RoleController extends Controller
     }
 
     /**
-     * Actualizar rol
+     * Actualizar rol - No permitir modificar Super Admin
      */
     public function update(Request $request, Role $role)
     {
+        $currentUser = auth()->user();
+        
+        // Si no es Super Admin y el rol es Super Admin, denegar
+        if (!$currentUser->hasRole('Super Admin') && $role->name === 'Super Admin') {
+            return back()->with('error', 'No tienes permiso para modificar el rol Super Administrador.');
+        }
+        
+        // Validar que no se intente cambiar el nombre a Super Admin
+        if (!$currentUser->hasRole('Super Admin') && $request->name === 'Super Admin') {
+            return back()->withInput()->with('error', 'No tienes permiso para crear el rol Super Administrador.');
+        }
+
         $validated = $request->validate([
             'name' => 'required|string|unique:roles,name,' . $role->id,
         ], [
@@ -163,9 +233,7 @@ class RoleController extends Controller
         DB::beginTransaction();
         try {
             $role->update(['name' => $validated['name']]);
-
             $role->syncPermissions($request->permisos ?? []);
-
             DB::commit();
 
             return redirect()->route('roles.index')
@@ -181,12 +249,19 @@ class RoleController extends Controller
     }
 
     /**
-     * Eliminar rol
+     * Eliminar rol - No permitir eliminar Super Admin
      */
     public function destroy(Role $role)
     {
+        $currentUser = auth()->user();
+        
         if ($role->name === 'Super Admin') {
-            return back()->with('error', 'No se puede eliminar el rol Super Admin.');
+            return back()->with('error', 'No se puede eliminar el rol Super Administrador.');
+        }
+        
+        // Si no es Super Admin, no puede eliminar ningún rol (opcional)
+        if (!$currentUser->hasRole('Super Admin')) {
+            return back()->with('error', 'No tienes permiso para eliminar roles.');
         }
 
         DB::beginTransaction();
@@ -224,7 +299,7 @@ class RoleController extends Controller
 
         } catch (\Exception $e) {
             Log::error('Error al exportar roles: ' . $e->getMessage());
-            return back()->with('error', 'Error al generar el archivo Excel. Intente nuevamente.');
+            return back()->with('error', 'Error al generar el archivo Excel.');
         }
     }
 }

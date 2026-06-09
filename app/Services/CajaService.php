@@ -7,6 +7,7 @@ use App\Models\CajaApertura;
 use App\Models\CajaMovimiento;
 use App\Models\CajaTransferencia;
 use App\Models\ContrasenaMaestra;
+use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 
@@ -42,59 +43,79 @@ class CajaService
         return null;
     }
 
-    /**
-     * Abrir caja
-     */
-    public static function abrirCaja($cajaId, $userId, $sucursalId, $montoInicial, $observaciones = null)
+
+    public static function abrirCaja($cajaId, $userId, $sucursalId, $empresaId, $montoInicial, $observaciones = null)
     {
-        DB::beginTransaction();
-        try {
-            $caja = Caja::findOrFail($cajaId);
+        $user = User::find($userId);
+        if (!$user)
+            throw new \Exception('Usuario no encontrado.');
 
-            // Verificar si ya tiene apertura abierta
-            if ($caja->tieneAperturaAbierta()) {
-                throw new \Exception('Esta caja ya tiene una apertura abierta.');
+        $caja = Caja::find($cajaId);
+        if (!$caja)
+            throw new \Exception('Caja no encontrada.');
+
+        // Verificar rol del usuario
+        $esAdmin = $user->hasRole('Super Admin') || $user->hasRole('Administrador');
+
+        // 🔥 1. Verificar si la caja permite múltiples aperturas (SOLO para NO admins)
+        if (!$caja->permite_multiple && !$esAdmin) {
+            $aperturaExistente = CajaApertura::where('caja_id', $cajaId)
+                ->where('empresa_id', $empresaId)
+                ->where('estado', 'abierta')
+                ->first();
+
+            if ($aperturaExistente) {
+                throw new \Exception("La caja '{$caja->nombre}' ya tiene una apertura activa y no permite múltiples aperturas simultáneas.");
             }
-
-            // Verificar múltiples aperturas
-            $aperturasHoy = CajaApertura::where('caja_id', $cajaId)
-                ->whereDate('fecha', today())
-                ->count();
-
-            if ($aperturasHoy > 0 && !$caja->permite_multiple) {
-                throw new \Exception('Esta caja no permite múltiples aperturas en el mismo día.');
-            }
-
-            $apertura = CajaApertura::create([
-                'caja_id' => $cajaId,
-                'user_id' => $userId,
-                'sucursal_id' => $sucursalId,
-                'fecha' => today(),
-                'fecha_apertura' => now(),
-                'monto_inicial' => $montoInicial,
-                'observaciones_apertura' => $observaciones,
-                'estado' => 'abierta'
-            ]);
-
-            // Registrar movimiento de apertura
-            CajaMovimiento::create([
-                'caja_apertura_id' => $apertura->id,
-                'user_id' => $userId,
-                'sucursal_id' => $sucursalId,
-                'tipo' => 'ingreso',
-                'categoria' => 'ajuste',
-                'forma_pago' => 'efectivo',
-                'monto' => $montoInicial,
-                'concepto' => 'Apertura de caja - Fondo inicial'
-            ]);
-
-            DB::commit();
-            return $apertura;
-
-        } catch (\Exception $e) {
-            DB::rollBack();
-            throw $e;
         }
+
+        // 🔥 2. Validar que el usuario no tenga otra caja abierta (SOLO para NO admins)
+        // Los admins pueden tener múltiples cajas abiertas
+        if (!$esAdmin) {
+            $aperturaUsuario = CajaApertura::where('user_id', $userId)
+                ->where('empresa_id', $empresaId)
+                ->where('sucursal_id', $sucursalId)
+                ->where('estado', 'abierta')
+                ->first();
+
+            if ($aperturaUsuario) {
+                throw new \Exception("Ya tienes una caja abierta en esta sucursal (Caja: {$aperturaUsuario->caja->nombre}). Debes cerrarla antes de abrir otra.");
+            }
+        }
+
+        // 🔥 3. Para admins, solo verificar que no estén abriendo la MISMA caja dos veces
+        if ($esAdmin) {
+            $mismaCaja = CajaApertura::where('caja_id', $cajaId)
+                ->where('user_id', $userId)
+                ->where('empresa_id', $empresaId)
+                ->where('sucursal_id', $sucursalId)
+                ->where('estado', 'abierta')
+                ->first();
+
+            if ($mismaCaja) {
+                throw new \Exception("Ya tienes esta caja abierta. No puedes abrir la misma caja dos veces.");
+            }
+        }
+
+        // Crear la apertura
+        $apertura = CajaApertura::create([
+            'empresa_id' => $empresaId,
+            'caja_id' => $cajaId,
+            'user_id' => $userId,
+            'sucursal_id' => $sucursalId,
+            'fecha' => now()->toDateString(),
+            'fecha_apertura' => now(),
+            'monto_inicial' => $montoInicial,
+            'monto_final' => null,
+            'total_ingresos' => 0,
+            'total_egresos' => 0,
+            'estado' => 'abierta',
+            'observaciones_apertura' => $observaciones,
+        ]);
+
+        $caja->increment('saldo_actual', $montoInicial);
+
+        return $apertura;
     }
 
     /**

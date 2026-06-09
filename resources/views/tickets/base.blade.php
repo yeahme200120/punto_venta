@@ -55,11 +55,19 @@
         .bold { font-weight: bold; }
         .small { font-size: 10px; }
         @page { size: auto; margin: 0; }
+        .logo { text-align: center; margin-bottom: 8px; }
+        .logo img { max-height: 60px; max-width: 100%; }
     </style>
 </head>
 <body>
     <div class="ticket">
         <div class="header">
+             {{-- LOGO DE LA EMPRESA --}}
+            @if($config->mostrar_logo && $config->logo_url)
+                <div class="logo">
+                    <img src="{{ $config->logo_url }}" alt="Logo">
+                </div>
+            @endif
             <div class="empresa">{{ $config->nombre_empresa }}</div>
             @if($config->cabecera)
                 <div class="info">{{ $config->cabecera }}</div>

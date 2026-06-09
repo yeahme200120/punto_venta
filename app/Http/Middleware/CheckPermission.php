@@ -9,14 +9,6 @@ use Illuminate\Support\Facades\Log;
 
 class CheckPermission
 {
-    /**
-     * Handle an incoming request.
-     *
-     * @param  \Illuminate\Http\Request  $request
-     * @param  \Closure  $next
-     * @param  string  ...$permissions
-     * @return mixed
-     */
     public function handle(Request $request, Closure $next, ...$permissions)
     {
         $user = auth()->user();
@@ -26,39 +18,40 @@ class CheckPermission
             return $next($request);
         }
         
+        if (!$user) {
+            return redirect()->route('login');
+        }
+        
         // Verificar si el usuario tiene al menos uno de los permisos requeridos
         $hasPermission = false;
-        $missingPermissions = [];
+        $missingPermission = '';
         
         foreach ($permissions as $permission) {
-            if ($user && $user->can($permission)) {
+            if ($user->can($permission)) {
                 $hasPermission = true;
                 break;
             }
-            $missingPermissions[] = $permission;
+            $missingPermission = $permission;
         }
         
         if (!$hasPermission) {
-            Log::warning('Acceso denegado a: ' . $request->path() . ' por usuario: ' . ($user ? $user->id : 'guest') . ' Permisos requeridos: ' . implode(', ', $permissions));
+            Log::warning('Acceso denegado: ' . $request->path() . ' - Usuario: ' . $user->email);
             
-            // Respuesta para AJAX
             if ($request->ajax() || $request->wantsJson()) {
                 return response()->json([
                     'success' => false,
+                    'icon' => 'error',
+                    'title' => 'Acceso denegado',
                     'message' => 'No tienes permiso para realizar esta acción.',
-                    'required_permissions' => $permissions,
-                    'missing_permissions' => $missingPermissions
                 ], 403);
             }
             
-            // Para sesión normal
-            if ($request->route()->named()) {
-                $routeName = $request->route()->getName();
-                return redirect()->back()
-                    ->with('error', '❌ No tienes permiso para acceder a esta sección. Permiso requerido: ' . implode(' o ', $permissions));
-            }
+            // Mensaje flash para mostrar en el layout
+            $mensaje = '🔒 No tienes permiso para acceder a esta sección.';
+            $mensaje .= ' Permiso requerido: ' . str_replace('_', ' ', $missingPermission);
             
-            abort(403, 'No tienes permiso para acceder a esta sección.');
+            return redirect()->route('dashboard')
+                ->with('error', $mensaje);
         }
         
         return $next($request);

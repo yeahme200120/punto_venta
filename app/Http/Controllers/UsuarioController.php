@@ -14,9 +14,6 @@ use Maatwebsite\Excel\Facades\Excel;
 
 class UsuarioController extends Controller
 {
-    /**
-     * Obtener el ID de la empresa activa desde la sesión
-     */
     private function empresaActivaId()
     {
         if (auth()->user()->hasRole('Super Admin')) {
@@ -25,9 +22,6 @@ class UsuarioController extends Controller
         return auth()->user()->empresa_id;
     }
 
-    /**
-     * Obtener el ID de la sucursal activa desde la sesión
-     */
     private function sucursalActivaId()
     {
         if (auth()->user()->hasRole('Super Admin')) {
@@ -36,23 +30,29 @@ class UsuarioController extends Controller
         return auth()->user()->sucursal_id;
     }
 
-    /**
-     * Listado de usuarios con paginación
-     */
     public function index()
     {
         try {
             $empresaId = $this->empresaActivaId();
             $sucursalId = $this->sucursalActivaId();
-
-            $usuarios = User::with(['roles', 'sucursal', 'empresa'])
-                ->where('empresa_id', $empresaId)
-                ->when($sucursalId, function ($query) use ($sucursalId) {
+            $user = auth()->user();
+            
+            $query = User::with(['roles', 'sucursal', 'empresa'])
+                ->where('empresa_id', $empresaId);
+            
+            // Si NO es Super Admin, excluir al Super Admin de la lista
+            if (!$user->hasRole('Super Admin')) {
+                $query->whereDoesntHave('roles', function($q) {
+                    $q->where('name', 'Super Admin');
+                });
+            }
+            
+            $usuarios = $query->when($sucursalId, function ($query) use ($sucursalId) {
                     return $query->where('sucursal_id', $sucursalId);
                 })
                 ->orderBy('name')
                 ->paginate(10)
-                ->withQueryString(); // Mantener filtros en paginación
+                ->withQueryString();
 
             $empresaActiva = \App\Models\Empresa::find($empresaId);
             $sucursalActiva = $sucursalId ? Sucursal::find($sucursalId) : null;
@@ -65,21 +65,25 @@ class UsuarioController extends Controller
         }
     }
 
-    /**
-     * Formulario de creación
-     */
     public function create()
     {
         try {
             $empresaId = $this->empresaActivaId();
-
-            $roles = Role::all();
+            $user = auth()->user();
+            
+            // Si NO es Super Admin, excluir el rol Super Admin de la lista
+            if ($user->hasRole('Super Admin')) {
+                $roles = Role::all();
+            } else {
+                $roles = Role::where('name', '!=', 'Super Admin')->get();
+            }
+            
             $sucursales = Sucursal::where('empresa_id', $empresaId)
                 ->where('activo', true)
                 ->orderBy('nombre')
                 ->get();
 
-            $empresas = auth()->user()->hasRole('Super Admin')
+            $empresas = $user->hasRole('Super Admin')
                 ? \App\Models\Empresa::where('activo', true)->orderBy('nombre')->get()
                 : collect();
 
@@ -91,94 +95,28 @@ class UsuarioController extends Controller
         }
     }
 
-    /**
-     * Almacenar nuevo usuario
-     */
-    public function store(Request $request)
-    {
-        // Validación con mensajes personalizados
-        $validated = $request->validate([
-            'name' => 'required|string|max:255',
-            'email' => 'required|email|unique:users,email',
-            'password' => 'required|min:6|confirmed',
-            'sucursal_id' => 'nullable|integer',
-            'activo' => 'boolean',
-        ], [
-            'name.required' => 'El nombre del usuario es obligatorio.',
-            'name.max' => 'El nombre no debe exceder los 255 caracteres.',
-            'email.required' => 'El correo electrónico es obligatorio.',
-            'email.email' => 'Ingrese un correo electrónico válido.',
-            'email.unique' => 'Este correo electrónico ya está registrado.',
-            'password.required' => 'La contraseña es obligatoria.',
-            'password.min' => 'La contraseña debe tener al menos 6 caracteres.',
-            'password.confirmed' => 'Las contraseñas no coinciden.',
-        ]);
-
-        DB::beginTransaction();
-        try {
-            $empresaId = auth()->user()->hasRole('Super Admin')
-                ? $request->empresa_id
-                : $this->empresaActivaId();
-
-            $usuario = User::create([
-                'empresa_id' => $empresaId,
-                'sucursal_id' => $request->sucursal_id,
-                'name' => $validated['name'],
-                'email' => $validated['email'],
-                'password' => Hash::make($validated['password']),
-                'activo' => $request->activo ?? true,
-            ]);
-
-            if ($request->roles) {
-                $usuario->syncRoles($request->roles);
-            }
-
-            DB::commit();
-
-            return redirect()->route('usuarios.index')
-                ->with('success', 'Usuario "' . $usuario->name . '" creado correctamente.');
-
-        } catch (\Exception $e) {
-            DB::rollBack();
-            Log::error('Error al crear usuario: ' . $e->getMessage());
-            return back()
-                ->withInput()
-                ->with('error', 'Error al crear el usuario: ' . $e->getMessage());
-        }
-    }
-
-    /**
-     * Mostrar detalle de usuario
-     */
-    public function show(User $usuario)
-    {
-        try {
-            $this->verificarEmpresa($usuario);
-            $usuario->load(['roles', 'sucursal', 'empresa']);
-            return view('usuarios.show', compact('usuario'));
-
-        } catch (\Exception $e) {
-            Log::error('Error al mostrar usuario: ' . $e->getMessage());
-            return back()->with('error', 'Error al cargar los datos del usuario.');
-        }
-    }
-
-    /**
-     * Formulario de edición
-     */
     public function edit(User $usuario)
     {
         try {
             $this->verificarEmpresa($usuario);
+            $this->verificarPermisoEdicion($usuario);
 
             $empresaId = $this->empresaActivaId();
-            $roles = Role::all();
+            $user = auth()->user();
+            
+            // Si NO es Super Admin, excluir el rol Super Admin
+            if ($user->hasRole('Super Admin')) {
+                $roles = Role::all();
+            } else {
+                $roles = Role::where('name', '!=', 'Super Admin')->get();
+            }
+            
             $sucursales = Sucursal::where('empresa_id', $empresaId)
                 ->where('activo', true)
                 ->orderBy('nombre')
                 ->get();
 
-            $empresas = auth()->user()->hasRole('Super Admin')
+            $empresas = $user->hasRole('Super Admin')
                 ? \App\Models\Empresa::where('activo', true)->orderBy('nombre')->get()
                 : collect();
 
@@ -190,12 +128,10 @@ class UsuarioController extends Controller
         }
     }
 
-    /**
-     * Actualizar usuario
-     */
     public function update(Request $request, User $usuario)
     {
         $this->verificarEmpresa($usuario);
+        $this->verificarPermisoEdicion($usuario);
 
         $validated = $request->validate([
             'name' => 'required|string|max:255',
@@ -222,7 +158,6 @@ class UsuarioController extends Controller
                 'activo' => $request->has('activo'),
             ];
 
-            // Solo Super Admin puede cambiar la empresa
             if (auth()->user()->hasRole('Super Admin') && $request->empresa_id) {
                 $data['empresa_id'] = $request->empresa_id;
             }
@@ -233,8 +168,17 @@ class UsuarioController extends Controller
 
             $usuario->update($data);
 
+            // Validar que no se asigne el rol Super Admin si el usuario actual no es Super Admin
             if ($request->roles) {
-                $usuario->syncRoles($request->roles);
+                $rolesAsignar = $request->roles;
+                if (!auth()->user()->hasRole('Super Admin')) {
+                    $rolesAsignar = array_diff($rolesAsignar, ['Super Admin']);
+                }
+                if (!empty($rolesAsignar)) {
+                    $usuario->syncRoles($rolesAsignar);
+                } else {
+                    $usuario->syncRoles([]);
+                }
             }
 
             DB::commit();
@@ -251,12 +195,10 @@ class UsuarioController extends Controller
         }
     }
 
-    /**
-     * Eliminar usuario
-     */
     public function destroy(User $usuario)
     {
         $this->verificarEmpresa($usuario);
+        $this->verificarPermisoEdicion($usuario);
 
         if ($usuario->id === auth()->id()) {
             return back()->with('error', 'No puedes eliminar tu propio usuario.');
@@ -278,12 +220,24 @@ class UsuarioController extends Controller
         }
     }
 
-    /**
-     * Activar/Desactivar usuario
-     */
+    public function show(User $usuario)
+    {
+        try {
+            $this->verificarEmpresa($usuario);
+            $this->verificarPermisoEdicion($usuario);
+            $usuario->load(['roles', 'sucursal', 'empresa']);
+            return view('usuarios.show', compact('usuario'));
+
+        } catch (\Exception $e) {
+            Log::error('Error al mostrar usuario: ' . $e->getMessage());
+            return back()->with('error', 'Error al cargar los datos del usuario.');
+        }
+    }
+
     public function toggleActivo(User $usuario)
     {
         $this->verificarEmpresa($usuario);
+        $this->verificarPermisoEdicion($usuario);
 
         if ($usuario->id === auth()->id()) {
             return back()->with('error', 'No puedes desactivar tu propio usuario.');
@@ -304,9 +258,6 @@ class UsuarioController extends Controller
         }
     }
 
-    /**
-     * Exportar usuarios a Excel
-     */
     public function export()
     {
         try {
@@ -316,7 +267,6 @@ class UsuarioController extends Controller
             $empresa = \App\Models\Empresa::find($empresaId);
             $sucursal = $sucursalId ? Sucursal::find($sucursalId) : null;
 
-            // Verificar que la empresa existe
             if (!$empresa) {
                 return back()->with('error', 'No se encontró la empresa activa.');
             }
@@ -338,13 +288,24 @@ class UsuarioController extends Controller
         }
     }
 
-    /**
-     * Verificar que el usuario pertenece a la empresa activa
-     */
     private function verificarEmpresa(User $usuario)
     {
         if ($usuario->empresa_id !== $this->empresaActivaId()) {
             abort(403, 'Este usuario no pertenece a la empresa activa.');
+        }
+    }
+
+    /**
+     * Verificar que el usuario actual pueda editar al usuario destino
+     * Un Administrador NO puede editar a un Super Admin
+     */
+    private function verificarPermisoEdicion(User $usuario)
+    {
+        $currentUser = auth()->user();
+        
+        // Si el usuario a editar tiene rol Super Admin y el usuario actual NO es Super Admin
+        if ($usuario->hasRole('Super Admin') && !$currentUser->hasRole('Super Admin')) {
+            abort(403, 'No tienes permiso para editar un usuario Super Administrador.');
         }
     }
 }

@@ -7,9 +7,9 @@ use App\Http\Controllers\ClienteController;
 use App\Http\Controllers\CobranzaController;
 use App\Http\Controllers\ContrasenaMaestraController;
 use App\Http\Controllers\CotizacionController;
-use App\Http\Controllers\DashboardCajaController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\EmpresaController;
+use App\Http\Controllers\FormaPagoController;
 use App\Http\Controllers\ImpresoraController;
 use App\Http\Controllers\InsumoController;
 use App\Http\Controllers\InventarioMovimientoController;
@@ -17,8 +17,11 @@ use App\Http\Controllers\LicenciaController;
 use App\Http\Controllers\ProductoController;
 use App\Http\Controllers\ProveedorController;
 use App\Http\Controllers\ReporteCajaController;
+use App\Http\Controllers\ReporteController;
+use App\Http\Controllers\RespaldoController;
 use App\Http\Controllers\RoleController;
 use App\Http\Controllers\SucursalController;
+use App\Http\Controllers\TicketConfiguracionController;
 use App\Http\Controllers\UnidadMedidaController;
 use App\Http\Controllers\UsuarioController;
 use App\Http\Controllers\UsuarioPermisoController;
@@ -33,442 +36,279 @@ Route::get('/', function () {
 // ===== RUTAS PROTEGIDAS =====
 Route::middleware(['auth', 'empresa.activa'])->group(function () {
 
-    // ===== UNIDADES DE MEDIDA =====
-    Route::middleware(['permiso:ver_unidades_medida'])->group(function () {
-        Route::get('/unidades-medida', [UnidadMedidaController::class, 'index'])->name('unidades-medida.index');
-        Route::get('/unidades-medida/{unidad_medida}', [UnidadMedidaController::class, 'show'])->name('unidades-medida.show');
-    });
-
-    Route::middleware(['permiso:crear_unidades_medida'])->group(function () {
-        Route::get('/unidades-medida/create', [UnidadMedidaController::class, 'create'])->name('unidades-medida.create');
-        Route::post('/unidades-medida', [UnidadMedidaController::class, 'store'])->name('unidades-medida.store');
-    });
-
-    Route::middleware(['permiso:editar_unidades_medida'])->group(function () {
-        Route::get('/unidades-medida/{unidad_medida}/edit', [UnidadMedidaController::class, 'edit'])->name('unidades-medida.edit');
-        Route::put('/unidades-medida/{unidad_medida}', [UnidadMedidaController::class, 'update'])->name('unidades-medida.update');
-    });
-
-    Route::middleware(['permiso:eliminar_unidades_medida'])->group(function () {
-        Route::delete('/unidades-medida/{unidad_medida}', [UnidadMedidaController::class, 'destroy'])->name('unidades-medida.destroy');
-    });
-
-    Route::post('/unidades-medida/{unidad_medida}/toggle-activo', [UnidadMedidaController::class, 'toggleActivo'])
-        ->middleware(['permiso:editar_unidades_medida'])
-        ->name('unidades-medida.toggle-activo');
-
     // ===== DASHBOARD =====
     Route::get('/dashboard', [DashboardController::class, 'index'])
         ->middleware(['permiso:ver_dashboard'])
         ->name('dashboard');
-    // Exportar dashboard
-    Route::get('/dashboard/exportar', [DashboardController::class, 'exportar'])->name('dashboard.exportar');
+    Route::get('/dashboard/exportar', [DashboardController::class, 'exportar'])
+        ->name('dashboard.exportar');
+
+    // ===== DASHBOARD DE CAJA =====
+    Route::get('/dashboard-caja', [DashboardController::class, 'index'])
+        ->middleware(['permiso:ver_dashboard_caja'])
+        ->name('dashboard.caja');
+
+    // ===== EMPRESAS =====
+    Route::prefix('empresas')->name('empresas.')->middleware(['auth', 'empresa.activa'])->group(function () {
+        Route::get('/', [EmpresaController::class, 'index'])->name('index')->middleware('permiso:ver_empresas');
+        Route::get('/create', [EmpresaController::class, 'create'])->name('create')->middleware('permiso:crear_empresas');
+        Route::post('/', [EmpresaController::class, 'store'])->name('store')->middleware('permiso:crear_empresas');
+        Route::get('/export', [EmpresaController::class, 'export'])->name('export')->middleware('permiso:ver_empresas');
+        Route::get('/{empresa}', [EmpresaController::class, 'show'])->name('show')->middleware('permiso:ver_empresas');
+        Route::get('/{empresa}/edit', [EmpresaController::class, 'edit'])->name('edit')->middleware('permiso:editar_empresas');
+        Route::put('/{empresa}', [EmpresaController::class, 'update'])->name('update')->middleware('permiso:editar_empresas');
+        Route::delete('/{empresa}', [EmpresaController::class, 'destroy'])->name('destroy')->middleware('permiso:eliminar_empresas');
+    });
+    Route::get('/empresa/{empresa}/cambiar', [EmpresaController::class, 'cambiar'])->name('empresa.cambiar');
+
+    // ===== LICENCIAS =====
+    Route::prefix('licencias')->name('licencias.')->middleware(['auth', 'empresa.activa'])->group(function () {
+        Route::get('/', [LicenciaController::class, 'index'])->name('index')->middleware('permiso:ver_licencias');
+        Route::get('/create', [LicenciaController::class, 'create'])->name('create')->middleware('permiso:crear_licencias');
+        Route::post('/', [LicenciaController::class, 'store'])->name('store')->middleware('permiso:crear_licencias');
+        Route::get('/export', [LicenciaController::class, 'export'])->name('export')->middleware('permiso:ver_licencias');
+        Route::get('/{licencia}', [LicenciaController::class, 'show'])->name('show')->middleware('permiso:ver_licencias');
+        Route::get('/{licencia}/edit', [LicenciaController::class, 'edit'])->name('edit')->middleware('permiso:editar_licencias');
+        Route::put('/{licencia}', [LicenciaController::class, 'update'])->name('update')->middleware('permiso:editar_licencias');
+        Route::delete('/{licencia}', [LicenciaController::class, 'destroy'])->name('destroy')->middleware('permiso:eliminar_licencias');
+    });
+
+    // ===== PROVEEDORES =====
+    Route::prefix('proveedores')->name('proveedores.')->middleware(['auth', 'empresa.activa'])->group(function () {
+        Route::get('/', [ProveedorController::class, 'index'])->name('index')->middleware('permiso:ver_proveedores');
+        Route::get('/create', [ProveedorController::class, 'create'])->name('create')->middleware('permiso:crear_proveedores');
+        Route::post('/', [ProveedorController::class, 'store'])->name('store')->middleware('permiso:crear_proveedores');
+        Route::get('/export', [ProveedorController::class, 'export'])->name('export')->middleware('permiso:ver_proveedores');
+        Route::get('/{proveedor}', [ProveedorController::class, 'show'])->name('show')->middleware('permiso:ver_proveedores');
+        Route::get('/{proveedor}/edit', [ProveedorController::class, 'edit'])->name('edit')->middleware('permiso:editar_proveedores');
+        Route::put('/{proveedor}', [ProveedorController::class, 'update'])->name('update')->middleware('permiso:editar_proveedores');
+        Route::delete('/{proveedor}', [ProveedorController::class, 'destroy'])->name('destroy')->middleware('permiso:eliminar_proveedores');
+        Route::post('/{proveedor}/toggle-activo', [ProveedorController::class, 'toggleActivo'])->name('toggle-activo')->middleware('permiso:editar_proveedores');
+    });
+
+    // ===== CLIENTES =====
+    Route::prefix('clientes')->name('clientes.')->middleware(['auth', 'empresa.activa'])->group(function () {
+        Route::get('/', [ClienteController::class, 'index'])->name('index')->middleware('permiso:ver_clientes');
+        Route::get('/create', [ClienteController::class, 'create'])->name('create')->middleware('permiso:crear_clientes');
+        Route::post('/', [ClienteController::class, 'store'])->name('store')->middleware('permiso:crear_clientes');
+        Route::get('/export', [ClienteController::class, 'export'])->name('export')->middleware('permiso:ver_clientes');
+        Route::get('/{cliente}', [ClienteController::class, 'show'])->name('show')->middleware('permiso:ver_clientes');
+        Route::get('/{cliente}/edit', [ClienteController::class, 'edit'])->name('edit')->middleware('permiso:editar_clientes');
+        Route::put('/{cliente}', [ClienteController::class, 'update'])->name('update')->middleware('permiso:editar_clientes');
+        Route::delete('/{cliente}', [ClienteController::class, 'destroy'])->name('destroy')->middleware('permiso:eliminar_clientes');
+    });
+
+    // ===== CATEGORÍAS =====
+    Route::prefix('categorias')->name('categorias.')->middleware(['auth', 'empresa.activa'])->group(function () {
+        Route::get('/', [CategoriaController::class, 'index'])->name('index')->middleware('permiso:ver_categorias');
+        Route::get('/create', [CategoriaController::class, 'create'])->name('create')->middleware('permiso:crear_categorias');
+        Route::post('/', [CategoriaController::class, 'store'])->name('store')->middleware('permiso:crear_categorias');
+        Route::get('/export', [CategoriaController::class, 'export'])->name('export')->middleware('permiso:ver_categorias');
+        Route::get('/{categoria}', [CategoriaController::class, 'show'])->name('show')->middleware('permiso:ver_categorias');
+        Route::get('/{categoria}/edit', [CategoriaController::class, 'edit'])->name('edit')->middleware('permiso:editar_categorias');
+        Route::put('/{categoria}', [CategoriaController::class, 'update'])->name('update')->middleware('permiso:editar_categorias');
+        Route::delete('/{categoria}', [CategoriaController::class, 'destroy'])->name('destroy')->middleware('permiso:eliminar_categorias');
+    });
+
+    // ===== UNIDADES DE MEDIDA =====
+    Route::prefix('unidades-medida')->name('unidades-medida.')->middleware(['auth', 'empresa.activa'])->group(function () {
+        Route::get('/', [UnidadMedidaController::class, 'index'])->name('index')->middleware('permiso:ver_unidades_medida');
+        Route::get('/create', [UnidadMedidaController::class, 'create'])->name('create')->middleware('permiso:crear_unidades_medida');
+        Route::post('/', [UnidadMedidaController::class, 'store'])->name('store')->middleware('permiso:crear_unidades_medida');
+        Route::get('/export', [UnidadMedidaController::class, 'export'])->name('export')->middleware('permiso:ver_unidades_medida');
+        Route::get('/{unidad_medida}', [UnidadMedidaController::class, 'show'])->name('show')->middleware('permiso:ver_unidades_medida');
+        Route::get('/{unidad_medida}/edit', [UnidadMedidaController::class, 'edit'])->name('edit')->middleware('permiso:editar_unidades_medida');
+        Route::put('/{unidad_medida}', [UnidadMedidaController::class, 'update'])->name('update')->middleware('permiso:editar_unidades_medida');
+        Route::delete('/{unidad_medida}', [UnidadMedidaController::class, 'destroy'])->name('destroy')->middleware('permiso:eliminar_unidades_medida');
+        Route::post('/{unidad_medida}/toggle-activo', [UnidadMedidaController::class, 'toggleActivo'])->name('toggle-activo')->middleware('permiso:editar_unidades_medida');
+    });
+
+    // ===== PRODUCTOS =====
+    Route::prefix('productos')->name('productos.')->middleware(['auth', 'empresa.activa'])->group(function () {
+        Route::get('/', [ProductoController::class, 'index'])->name('index')->middleware('permiso:ver_productos');
+        Route::get('/create', [ProductoController::class, 'create'])->name('create')->middleware('permiso:crear_productos');
+        Route::post('/', [ProductoController::class, 'store'])->name('store')->middleware('permiso:crear_productos');
+        Route::get('/export', [ProductoController::class, 'export'])->name('export')->middleware('permiso:ver_productos');
+        Route::post('/generar-sku', [ProductoController::class, 'generarSkuUnico'])->name('generar-sku')->middleware('permiso:crear_productos');
+        Route::post('/generar-sku-por-nombre', [ProductoController::class, 'generarSkuPorNombre'])->name('generar-sku-por-nombre')->middleware('permiso:crear_productos');
+        Route::get('/{producto}', [ProductoController::class, 'show'])->name('show')->middleware('permiso:ver_productos');
+        Route::get('/{producto}/edit', [ProductoController::class, 'edit'])->name('edit')->middleware('permiso:editar_productos');
+        Route::put('/{producto}', [ProductoController::class, 'update'])->name('update')->middleware('permiso:editar_productos');
+        Route::delete('/{producto}', [ProductoController::class, 'destroy'])->name('destroy')->middleware('permiso:eliminar_productos');
+
+        // Imágenes de productos
+        Route::post('/{producto}/imagenes', [ProductoController::class, 'subirImagen'])->name('imagenes.subir')->middleware('permiso:editar_productos');
+        Route::delete('/{producto}/imagenes/{imagen}', [ProductoController::class, 'eliminarImagen'])->name('imagenes.eliminar')->middleware('permiso:editar_productos');
+        Route::put('/{producto}/imagenes/{imagen}/principal', [ProductoController::class, 'imagenPrincipal'])->name('imagenes.principal')->middleware('permiso:editar_productos');
+
+        // Productos relacionados
+        Route::post('/{producto}/relacionados', [ProductoController::class, 'agregarRelacionado'])->name('relacionados.agregar')->middleware('permiso:editar_productos');
+        Route::delete('/{producto}/relacionados/{relacionado}', [ProductoController::class, 'eliminarRelacionado'])->name('relacionados.eliminar')->middleware('permiso:editar_productos');
+    });
+
+    // ===== INSUMOS =====
+    Route::prefix('insumos')->name('insumos.')->middleware(['auth', 'empresa.activa'])->group(function () {
+        Route::get('/', [InsumoController::class, 'index'])->name('index')->middleware('permiso:ver_insumos');
+        Route::get('/create', [InsumoController::class, 'create'])->name('create')->middleware('permiso:crear_insumos');
+        Route::post('/', [InsumoController::class, 'store'])->name('store')->middleware('permiso:crear_insumos');
+        Route::get('/export', [InsumoController::class, 'export'])->name('export')->middleware('permiso:ver_insumos');
+        Route::get('/{insumo}', [InsumoController::class, 'show'])->name('show')->middleware('permiso:ver_insumos');
+        Route::get('/{insumo}/edit', [InsumoController::class, 'edit'])->name('edit')->middleware('permiso:editar_insumos');
+        Route::put('/{insumo}', [InsumoController::class, 'update'])->name('update')->middleware('permiso:editar_insumos');
+        Route::delete('/{insumo}', [InsumoController::class, 'destroy'])->name('destroy')->middleware('permiso:eliminar_insumos');
+        Route::post('/{insumo}/toggle-activo', [InsumoController::class, 'toggleActivo'])->name('toggle-activo')->middleware('permiso:editar_insumos');
+    });
+
+    // ===== SUCURSALES =====
+    Route::prefix('sucursales')->name('sucursales.')->middleware(['auth', 'empresa.activa'])->group(function () {
+        Route::get('/', [SucursalController::class, 'index'])->name('index')->middleware('permiso:ver_sucursales');
+        Route::get('/create', [SucursalController::class, 'create'])->name('create')->middleware('permiso:crear_sucursales');
+        Route::post('/', [SucursalController::class, 'store'])->name('store')->middleware('permiso:crear_sucursales');
+        Route::get('/{sucursal}', [SucursalController::class, 'show'])->name('show')->middleware('permiso:ver_sucursales');
+        Route::get('/{sucursal}/edit', [SucursalController::class, 'edit'])->name('edit')->middleware('permiso:editar_sucursales');
+        Route::put('/{sucursal}', [SucursalController::class, 'update'])->name('update')->middleware('permiso:editar_sucursales');
+        Route::delete('/{sucursal}', [SucursalController::class, 'destroy'])->name('destroy')->middleware('permiso:eliminar_sucursales');
+    });
+    Route::get('/sucursal/{sucursal}/cambiar', [SucursalController::class, 'cambiar'])->name('sucursal.cambiar');
+
+    // ===== IMPRESORAS =====
+    Route::prefix('impresoras')->name('impresoras.')->middleware(['auth', 'empresa.activa'])->group(function () {
+        Route::get('/', [ImpresoraController::class, 'index'])->name('index')->middleware('permiso:ver_impresoras');
+        Route::get('/create', [ImpresoraController::class, 'create'])->name('create')->middleware('permiso:crear_impresoras');
+        Route::post('/', [ImpresoraController::class, 'store'])->name('store')->middleware('permiso:crear_impresoras');
+        Route::get('/export', [ImpresoraController::class, 'export'])->name('export')->middleware('permiso:ver_impresoras');
+        Route::get('/{impresora}', [ImpresoraController::class, 'show'])->name('show')->middleware('permiso:ver_impresoras');
+        Route::get('/{impresora}/edit', [ImpresoraController::class, 'edit'])->name('edit')->middleware('permiso:editar_impresoras');
+        Route::put('/{impresora}', [ImpresoraController::class, 'update'])->name('update')->middleware('permiso:editar_impresoras');
+        Route::delete('/{impresora}', [ImpresoraController::class, 'destroy'])->name('destroy')->middleware('permiso:eliminar_impresoras');
+    });
+
+    // ===== FORMAS DE PAGO =====
+    Route::prefix('formas-pago')->name('formas_pago.')->middleware(['auth', 'empresa.activa'])->group(function () {
+        Route::get('/', [FormaPagoController::class, 'index'])->name('index')->middleware('permiso:ver_formaspago');
+        Route::get('/create', [FormaPagoController::class, 'create'])->name('create')->middleware('permiso:crear_formaspago');
+        Route::post('/', [FormaPagoController::class, 'store'])->name('store')->middleware('permiso:crear_formaspago');
+        Route::get('/{formaPago}/edit', [FormaPagoController::class, 'edit'])->name('edit')->middleware('permiso:editar_formaspago');
+        Route::put('/{formaPago}', [FormaPagoController::class, 'update'])->name('update')->middleware('permiso:editar_formaspago');
+        Route::delete('/{formaPago}', [FormaPagoController::class, 'destroy'])->name('destroy')->middleware('permiso:eliminar_formaspago');
+        Route::post('/{formaPago}/toggle-activo', [FormaPagoController::class, 'toggleActivo'])->name('toggle-activo')->middleware('permiso:editar_formaspago');
+    });
+
+    // ===== TICKET =====
+    Route::prefix('ticket')->name('ticket.')->middleware(['auth', 'empresa.activa'])->group(function () {
+        Route::get('/', [TicketConfiguracionController::class, 'index'])->name('index')->middleware('permiso:ver_ticket');
+        Route::get('/create', [TicketConfiguracionController::class, 'create'])->name('create')->middleware('permiso:crear_ticket');
+        Route::post('/', [TicketConfiguracionController::class, 'store'])->name('store')->middleware('permiso:crear_ticket');
+        Route::get('/diseno', [TicketConfiguracionController::class, 'diseno'])->name('diseno')->middleware('permiso:ver_ticket');
+        Route::get('/{ticketConfiguracion}', [TicketConfiguracionController::class, 'show'])->name('show')->middleware('permiso:ver_ticket');
+        Route::get('/{ticketConfiguracion}/edit', [TicketConfiguracionController::class, 'edit'])->name('edit')->middleware('permiso:editar_ticket');
+        Route::put('/{ticketConfiguracion}', [TicketConfiguracionController::class, 'update'])->name('update')->middleware('permiso:editar_ticket');
+        Route::delete('/{ticketConfiguracion}', [TicketConfiguracionController::class, 'destroy'])->name('destroy')->middleware('permiso:eliminar_ticket');
+        Route::post('/{ticketConfiguracion}/toggle-activo', [TicketConfiguracionController::class, 'toggleActivo'])->name('toggle-activo')->middleware('permiso:editar_ticket');
+    });
+
     // ===== USUARIOS =====
-    Route::middleware(['permiso:ver_usuarios'])->group(function () {
-        Route::get('/usuarios', [UsuarioController::class, 'index'])->name('usuarios.index');
-        Route::get('/usuarios/{usuario}', [UsuarioController::class, 'show'])->name('usuarios.show');
-        Route::get('/usuarios/export', [UsuarioController::class, 'export'])->name('usuarios.export');
-    });
-
-    Route::middleware(['permiso:crear_usuarios'])->group(function () {
-        Route::get('/usuarios/create', [UsuarioController::class, 'create'])->name('usuarios.create');
-        Route::post('/usuarios', [UsuarioController::class, 'store'])->name('usuarios.store');
-    });
-
-    Route::middleware(['permiso:editar_usuarios'])->group(function () {
-        Route::get('/usuarios/{usuario}/edit', [UsuarioController::class, 'edit'])->name('usuarios.edit');
-        Route::put('/usuarios/{usuario}', [UsuarioController::class, 'update'])->name('usuarios.update');
-        Route::put('/usuarios/{usuario}/toggle-activo', [UsuarioController::class, 'toggleActivo'])->name('usuarios.toggle-activo');
-    });
-
-    Route::middleware(['permiso:eliminar_usuarios'])->group(function () {
-        Route::delete('/usuarios/{usuario}', [UsuarioController::class, 'destroy'])->name('usuarios.destroy');
+    Route::prefix('usuarios')->name('usuarios.')->middleware(['auth', 'empresa.activa'])->group(function () {
+        Route::get('/', [UsuarioController::class, 'index'])->name('index')->middleware('permiso:ver_usuarios');
+        Route::get('/create', [UsuarioController::class, 'create'])->name('create')->middleware('permiso:crear_usuarios');
+        Route::post('/', [UsuarioController::class, 'store'])->name('store')->middleware('permiso:crear_usuarios');
+        Route::get('/export', [UsuarioController::class, 'export'])->name('export')->middleware('permiso:ver_usuarios');
+        Route::get('/{usuario}', [UsuarioController::class, 'show'])->name('show')->middleware('permiso:ver_usuarios');
+        Route::get('/{usuario}/edit', [UsuarioController::class, 'edit'])->name('edit')->middleware('permiso:editar_usuarios');
+        Route::put('/{usuario}', [UsuarioController::class, 'update'])->name('update')->middleware('permiso:editar_usuarios');
+        Route::delete('/{usuario}', [UsuarioController::class, 'destroy'])->name('destroy')->middleware('permiso:eliminar_usuarios');
+        Route::put('/{usuario}/toggle-activo', [UsuarioController::class, 'toggleActivo'])->name('toggle-activo')->middleware('permiso:editar_usuarios');
+        Route::get('/{usuario}/permisos', [UsuarioPermisoController::class, 'edit'])->name('permisos.edit')->middleware('permiso:editar_usuarios');
+        Route::put('/{usuario}/permisos', [UsuarioPermisoController::class, 'update'])->name('permisos.update')->middleware('permiso:editar_usuarios');
     });
 
     // Perfil (acceso propio)
     Route::get('/perfil', [UsuarioController::class, 'perfil'])->name('perfil.index');
     Route::put('/perfil', [UsuarioController::class, 'updatePerfil'])->name('perfil.update');
 
-    // ===== PERMISOS DE USUARIO =====
-    Route::middleware(['permiso:editar_usuarios'])->group(function () {
-        Route::get('/usuarios/{usuario}/permisos', [UsuarioPermisoController::class, 'edit'])->name('usuarios.permisos.edit');
-        Route::put('/usuarios/{usuario}/permisos', [UsuarioPermisoController::class, 'update'])->name('usuarios.permisos.update');
-    });
-
-    // ===== ROLES =====
-    Route::middleware(['permiso:ver_roles'])->group(function () {
-        Route::get('/roles', [RoleController::class, 'index'])->name('roles.index');
-        Route::get('/roles/{role}', [RoleController::class, 'show'])->name('roles.show');
-        Route::get('/roles/export', [RoleController::class, 'export'])->name('roles.export');
-    });
-
-    Route::middleware(['permiso:crear_roles'])->group(function () {
-        Route::get('/roles/create', [RoleController::class, 'create'])->name('roles.create');
-        Route::post('/roles', [RoleController::class, 'store'])->name('roles.store');
-    });
-
-    Route::middleware(['permiso:editar_roles'])->group(function () {
-        Route::get('/roles/{role}/edit', [RoleController::class, 'edit'])->name('roles.edit');
-        Route::put('/roles/{role}', [RoleController::class, 'update'])->name('roles.update');
-    });
-
-    Route::middleware(['permiso:eliminar_roles'])->group(function () {
-        Route::delete('/roles/{role}', [RoleController::class, 'destroy'])->name('roles.destroy');
-    });
-
-    // ===== EMPRESAS (Solo Super Admin) =====
-    Route::middleware(['permiso:ver_empresas'])->group(function () {
-        Route::get('/empresas', [EmpresaController::class, 'index'])->name('empresas.index');
-        Route::get('/empresas/{empresa}', [EmpresaController::class, 'show'])->name('empresas.show');
-        Route::get('/empresas/export', [EmpresaController::class, 'export'])->name('empresas.export');
-    });
-
-    Route::middleware(['permiso:crear_empresas'])->group(function () {
-        Route::get('/empresas/create', [EmpresaController::class, 'create'])->name('empresas.create');
-        Route::post('/empresas', [EmpresaController::class, 'store'])->name('empresas.store');
-    });
-
-    Route::middleware(['permiso:editar_empresas'])->group(function () {
-        Route::get('/empresas/{empresa}/edit', [EmpresaController::class, 'edit'])->name('empresas.edit');
-        Route::put('/empresas/{empresa}', [EmpresaController::class, 'update'])->name('empresas.update');
-        Route::get('/empresa/{empresa}/cambiar', [EmpresaController::class, 'cambiar'])->name('empresa.cambiar');
-    });
-
-    Route::middleware(['permiso:eliminar_empresas'])->group(function () {
-        Route::delete('/empresas/{empresa}', [EmpresaController::class, 'destroy'])->name('empresas.destroy');
-    });
-
-    // ===== LICENCIAS =====
-    Route::middleware(['permiso:ver_licencias'])->group(function () {
-        Route::get('/licencias', [LicenciaController::class, 'index'])->name('licencias.index');
-        Route::get('/licencias/{licencia}', [LicenciaController::class, 'show'])->name('licencias.show');
-        Route::get('/licencias/export', [LicenciaController::class, 'export'])->name('licencias.export');
-    });
-
-    Route::middleware(['permiso:crear_licencias'])->group(function () {
-        Route::get('/licencias/create', [LicenciaController::class, 'create'])->name('licencias.create');
-        Route::post('/licencias', [LicenciaController::class, 'store'])->name('licencias.store');
-    });
-
-    Route::middleware(['permiso:editar_licencias'])->group(function () {
-        Route::get('/licencias/{licencia}/edit', [LicenciaController::class, 'edit'])->name('licencias.edit');
-        Route::put('/licencias/{licencia}', [LicenciaController::class, 'update'])->name('licencias.update');
-    });
-
-    Route::middleware(['permiso:eliminar_licencias'])->group(function () {
-        Route::delete('/licencias/{licencia}', [LicenciaController::class, 'destroy'])->name('licencias.destroy');
-    });
-
-    // ===== PROVEEDORES =====
-    Route::middleware(['permiso:ver_proveedores'])->group(function () {
-        Route::get('/proveedores', [ProveedorController::class, 'index'])->name('proveedores.index');
-        Route::get('/proveedores/{proveedor}', [ProveedorController::class, 'show'])->name('proveedores.show');
-        Route::get('/proveedores/export', [ProveedorController::class, 'export'])->name('proveedores.export');
-    });
-
-    Route::middleware(['permiso:crear_proveedores'])->group(function () {
-        Route::get('/proveedores/create', [ProveedorController::class, 'create'])->name('proveedores.create');
-        Route::post('/proveedores', [ProveedorController::class, 'store'])->name('proveedores.store');
-    });
-
-    Route::middleware(['permiso:editar_proveedores'])->group(function () {
-        Route::get('/proveedores/{proveedor}/edit', [ProveedorController::class, 'edit'])->name('proveedores.edit');
-        Route::put('/proveedores/{proveedor}', [ProveedorController::class, 'update'])->name('proveedores.update');
-        Route::post('/proveedores/{proveedor}/toggle-activo', [ProveedorController::class, 'toggleActivo'])->name('proveedores.toggle-activo');
-    });
-
-    Route::middleware(['permiso:eliminar_proveedores'])->group(function () {
-        Route::delete('/proveedores/{proveedor}', [ProveedorController::class, 'destroy'])->name('proveedores.destroy');
-    });
-
-    // ===== IMPRESORAS =====
-    Route::middleware(['permiso:ver_impresoras'])->group(function () {
-        Route::get('/impresoras', [ImpresoraController::class, 'index'])->name('impresoras.index');
-        Route::get('/impresoras/{impresora}', [ImpresoraController::class, 'show'])->name('impresoras.show');
-        Route::get('/impresoras/export', [ImpresoraController::class, 'export'])->name('impresoras.export');
-    });
-
-    Route::middleware(['permiso:crear_impresoras'])->group(function () {
-        Route::get('/impresoras/create', [ImpresoraController::class, 'create'])->name('impresoras.create');
-        Route::post('/impresoras', [ImpresoraController::class, 'store'])->name('impresoras.store');
-    });
-
-    Route::middleware(['permiso:editar_impresoras'])->group(function () {
-        Route::get('/impresoras/{impresora}/edit', [ImpresoraController::class, 'edit'])->name('impresoras.edit');
-        Route::put('/impresoras/{impresora}', [ImpresoraController::class, 'update'])->name('impresoras.update');
-    });
-
-    Route::middleware(['permiso:eliminar_impresoras'])->group(function () {
-        Route::delete('/impresoras/{impresora}', [ImpresoraController::class, 'destroy'])->name('impresoras.destroy');
-    });
-
-    // ===== SUCURSALES =====
-    Route::middleware(['permiso:ver_sucursales'])->group(function () {
-        Route::get('/sucursales', [SucursalController::class, 'index'])->name('sucursales.index');
-        Route::get('/sucursales/{sucursal}', [SucursalController::class, 'show'])->name('sucursales.show');
-    });
-
-    Route::middleware(['permiso:crear_sucursales'])->group(function () {
-        Route::get('/sucursales/create', [SucursalController::class, 'create'])->name('sucursales.create');
-        Route::post('/sucursales', [SucursalController::class, 'store'])->name('sucursales.store');
-    });
-
-    Route::middleware(['permiso:editar_sucursales'])->group(function () {
-        Route::get('/sucursales/{sucursal}/edit', [SucursalController::class, 'edit'])->name('sucursales.edit');
-        Route::put('/sucursales/{sucursal}', [SucursalController::class, 'update'])->name('sucursales.update');
-        Route::get('/sucursal/{sucursal}/cambiar', [SucursalController::class, 'cambiar'])->name('sucursal.cambiar');
-    });
-
-    Route::middleware(['permiso:eliminar_sucursales'])->group(function () {
-        Route::delete('/sucursales/{sucursal}', [SucursalController::class, 'destroy'])->name('sucursales.destroy');
-    });
-
-    // ===== CLIENTES =====
-    Route::middleware(['permiso:ver_clientes'])->group(function () {
-        Route::get('/clientes', [ClienteController::class, 'index'])->name('clientes.index');
-        Route::get('/clientes/{cliente}', [ClienteController::class, 'show'])->name('clientes.show');
-        Route::get('/clientes/export', [ClienteController::class, 'export'])->name('clientes.export');
-    });
-
-    Route::middleware(['permiso:crear_clientes'])->group(function () {
-        Route::get('/clientes/create', [ClienteController::class, 'create'])->name('clientes.create');
-        Route::post('/clientes', [ClienteController::class, 'store'])->name('clientes.store');
-    });
-
-    Route::middleware(['permiso:editar_clientes'])->group(function () {
-        Route::get('/clientes/{cliente}/edit', [ClienteController::class, 'edit'])->name('clientes.edit');
-        Route::put('/clientes/{cliente}', [ClienteController::class, 'update'])->name('clientes.update');
-    });
-
-    Route::middleware(['permiso:eliminar_clientes'])->group(function () {
-        Route::delete('/clientes/{cliente}', [ClienteController::class, 'destroy'])->name('clientes.destroy');
-    });
-
-    // ===== CATEGORÍAS =====
-    Route::middleware(['permiso:ver_categorias'])->group(function () {
-        Route::get('/categorias', [CategoriaController::class, 'index'])->name('categorias.index');
-        Route::get('/categorias/{categoria}', [CategoriaController::class, 'show'])->name('categorias.show');
-        Route::get('/categorias/export', [CategoriaController::class, 'export'])->name('categorias.export');
-    });
-
-    Route::middleware(['permiso:crear_categorias'])->group(function () {
-        Route::get('/categorias/create', [CategoriaController::class, 'create'])->name('categorias.create');
-        Route::post('/categorias', [CategoriaController::class, 'store'])->name('categorias.store');
-    });
-
-    Route::middleware(['permiso:editar_categorias'])->group(function () {
-        Route::get('/categorias/{categoria}/edit', [CategoriaController::class, 'edit'])->name('categorias.edit');
-        Route::put('/categorias/{categoria}', [CategoriaController::class, 'update'])->name('categorias.update');
-    });
-
-    Route::middleware(['permiso:eliminar_categorias'])->group(function () {
-        Route::delete('/categorias/{categoria}', [CategoriaController::class, 'destroy'])->name('categorias.destroy');
-    });
-
-    // ===== PRODUCTOS =====
-    Route::middleware(['permiso:ver_productos'])->group(function () {
-        Route::get('/productos', [ProductoController::class, 'index'])->name('productos.index');
-        Route::get('/productos/{producto}', [ProductoController::class, 'show'])->name('productos.show');
-        Route::get('/productos/export', [ProductoController::class, 'export'])->name('productos.export');
-    });
-
-    Route::middleware(['permiso:crear_productos'])->group(function () {
-        Route::get('/productos/create', [ProductoController::class, 'create'])->name('productos.create');
-        Route::post('/productos', [ProductoController::class, 'store'])->name('productos.store');
-        Route::post('/productos/generar-sku', [ProductoController::class, 'generarSkuUnico'])->name('productos.generar-sku');
-        Route::post('/productos/generar-sku-por-nombre', [ProductoController::class, 'generarSkuPorNombre'])->name('productos.generar-sku-por-nombre');
-    });
-
-    Route::middleware(['permiso:editar_productos'])->group(function () {
-        Route::get('/productos/{producto}/edit', [ProductoController::class, 'edit'])->name('productos.edit');
-        Route::put('/productos/{producto}', [ProductoController::class, 'update'])->name('productos.update');
-    });
-
-    Route::middleware(['permiso:eliminar_productos'])->group(function () {
-        Route::delete('/productos/{producto}', [ProductoController::class, 'destroy'])->name('productos.destroy');
-    });
-
-    // Imágenes de productos
-    Route::middleware(['permiso:editar_productos'])->group(function () {
-        Route::post('/productos/{producto}/imagenes', [ProductoController::class, 'subirImagen'])->name('productos.imagenes.subir');
-        Route::delete('/productos/{producto}/imagenes/{imagen}', [ProductoController::class, 'eliminarImagen'])->name('productos.imagenes.eliminar');
-        Route::put('/productos/{producto}/imagenes/{imagen}/principal', [ProductoController::class, 'imagenPrincipal'])->name('productos.imagenes.principal');
-    });
-
-    // Productos relacionados
-    Route::middleware(['permiso:editar_productos'])->group(function () {
-        Route::post('/productos/{producto}/relacionados', [ProductoController::class, 'agregarRelacionado'])->name('productos.relacionados.agregar');
-        Route::delete('/productos/{producto}/relacionados/{relacionado}', [ProductoController::class, 'eliminarRelacionado'])->name('productos.relacionados.eliminar');
-    });
-
-    // ===== INSUMOS =====
-    Route::middleware(['permiso:ver_insumos'])->group(function () {
-        Route::get('/insumos', [InsumoController::class, 'index'])->name('insumos.index');
-        Route::get('/insumos/{insumo}', [InsumoController::class, 'show'])->name('insumos.show');
-        Route::get('/insumos/export', [InsumoController::class, 'export'])->name('insumos.export');
-    });
-
-    Route::middleware(['permiso:crear_insumos'])->group(function () {
-        Route::get('/insumos/create', [InsumoController::class, 'create'])->name('insumos.create');
-        Route::post('/insumos', [InsumoController::class, 'store'])->name('insumos.store');
-    });
-
-    Route::middleware(['permiso:editar_insumos'])->group(function () {
-        Route::get('/insumos/{insumo}/edit', [InsumoController::class, 'edit'])->name('insumos.edit');
-        Route::put('/insumos/{insumo}', [InsumoController::class, 'update'])->name('insumos.update');
-        Route::post('/insumos/{insumo}/toggle-activo', [InsumoController::class, 'toggleActivo'])->name('insumos.toggle-activo');
-    });
-
-    Route::middleware(['permiso:eliminar_insumos'])->group(function () {
-        Route::delete('/insumos/{insumo}', [InsumoController::class, 'destroy'])->name('insumos.destroy');
-    });
-
-    // ===== MOVIMIENTOS DE INVENTARIO =====
-    Route::middleware(['permiso:ver_inventario'])->group(function () {
-        Route::get('/inventario/movimientos', [InventarioMovimientoController::class, 'index'])->name('inventario.movimientos');
-        Route::get('/inventario/movimientos/export', [InventarioMovimientoController::class, 'export'])->name('inventario.movimientos.export');
-    });
-
-    Route::middleware(['permiso:crear_inventario'])->group(function () {
-        Route::get('/inventario/movimientos/create', [InventarioMovimientoController::class, 'create'])->name('inventario.movimientos.create');
-        Route::post('/inventario/movimientos', [InventarioMovimientoController::class, 'store'])->name('inventario.movimientos.store');
-    });
-
-    // ===== CAJA =====
-    Route::prefix('caja')->name('cajas.')->group(function () {
-
-        // Gestión de cajas (CRUD)
-        Route::middleware(['permiso:ver_cajas'])->group(function () {
-            Route::get('/cajas', [CajaController::class, 'indexCajas'])->name('cajas.index');
-        });
-
-        Route::middleware(['permiso:crear_caja'])->group(function () {
-            Route::get('/cajas/create', [CajaController::class, 'createCaja'])->name('cajas.create');
-            Route::post('/cajas', [CajaController::class, 'storeCaja'])->name('cajas.store');
-        });
-
-        Route::middleware(['permiso:editar_caja'])->group(function () {
-            Route::get('/cajas/{caja}/edit', [CajaController::class, 'editCaja'])->name('cajas.edit');
-            Route::put('/cajas/{caja}', [CajaController::class, 'updateCaja'])->name('cajas.update');
-
-        });
-
-        Route::middleware(['permiso:eliminar_caja'])->group(function () {
-            Route::delete('/cajas/{caja}', [CajaController::class, 'destroyCaja'])->name('cajas.destroy');
-        });
-
-        // Apertura/Cierre
-        Route::middleware(['permiso:abrir_caja'])->group(function () {
-            Route::get('/apertura', [CajaController::class, 'aperturaIndex'])->name('apertura');
-            Route::post('/abrir', [CajaController::class, 'abrirCaja'])->name('abrir');
-            Route::post('/cerrar', [CajaController::class, 'cerrarCaja'])->name('cerrar');
-        });
-
-        // Operaciones
-        Route::middleware(['permiso:ver_movimientos_caja'])->group(function () {
-            Route::get('/operaciones', [CajaController::class, 'operaciones'])->name('operaciones');
-        });
-
-        Route::middleware(['permiso:registrar_movimiento_caja'])->group(function () {
-            Route::post('/movimiento', [CajaController::class, 'registrarMovimiento'])->name('movimiento.registrar');
-        });
-
-        // Arqueos
-        Route::middleware(['permiso:realizar_arqueo'])->group(function () {
-            Route::get('/arqueos', [CajaController::class, 'arqueos'])->name('arqueos');
-            Route::post('/arqueo/registrar', [CajaController::class, 'registrarArqueo'])->name('arqueo.registrar');
-            Route::get('/arqueo/{arqueo}', [CajaController::class, 'verArqueo'])->name('arqueo.ver');
-            Route::get('/arqueo/{arqueo}/imprimir', [CajaController::class, 'imprimirArqueo'])->name('arqueo.imprimir');
-        });
-
-        // Autorizaciones
-        Route::middleware(['permiso:ver_autorizaciones_caja'])->group(function () {
-            Route::get('/autorizaciones', [CajaController::class, 'autorizacionesPendientes'])->name('autorizaciones');
-        });
-
-        Route::middleware(['permiso:autorizar_movimiento'])->group(function () {
-            Route::post('/movimiento/{movimientoId}/autorizar', [CajaController::class, 'autorizarMovimiento'])->name('movimiento.autorizar');
-        });
-
-        // Transferencias
-        Route::middleware(['permiso:ver_transferencias_caja'])->group(function () {
-            Route::get('/transferencias', [CajaController::class, 'transferencias'])->name('transferencias');
-        });
-
-        Route::middleware(['permiso:solicitar_transferencia_caja'])->group(function () {
-            Route::post('/transferencia/solicitar', [CajaController::class, 'solicitarTransferencia'])->name('transferencia.solicitar');
-        });
-
-        Route::middleware(['permiso:autorizar_transferencia'])->group(function () {
-            Route::post('/transferencia/{transferenciaId}/autorizar', [CajaController::class, 'autorizarTransferencia'])->name('transferencia.autorizar');
-        });
-
-        // Reportes
-        Route::middleware(['permiso:ver_reporte_caja_diario'])->group(function () {
-            Route::get('/reporte/{aperturaId}', [CajaController::class, 'reporteDia'])->name('reporte.dia');
-        });
-
-        // Dentro del grupo de rutas de caja, agregar:
-
-        // Tickets
-        Route::get('/movimiento/{movimiento}/ticket', [CajaController::class, 'imprimirTicketMovimiento'])->name('movimiento.ticket');
-        Route::get('/transferencia/{transferencia}/ticket', [CajaController::class, 'imprimirTicketTransferencia'])->name('transferencia.ticket');
-        Route::get('/arqueo/{arqueo}/ticket', [CajaController::class, 'imprimirTicketArqueo'])->name('arqueo.ticket');
-        Route::get('/cierre/{apertura}/ticket', [CajaController::class, 'imprimirTicketCierre'])->name('cierre.ticket');
-        // Dentro del grupo de caja
-        Route::post('/retiro/registrar', [CajaController::class, 'registrarRetiro'])->name('retiro.registrar');
-    });
-
-    // ===== CONTRASEÑAS MAESTRAS (Perfil) =====
+    // ===== CONTRASEÑAS MAESTRAS =====
     Route::prefix('perfil')->name('perfil.')->group(function () {
         Route::get('/contraseñas-maestras', [ContrasenaMaestraController::class, 'index'])->name('contraseñas');
         Route::post('/contraseñas-maestras', [ContrasenaMaestraController::class, 'store'])->name('contraseñas.store');
         Route::delete('/contraseñas-maestras/{contraseñaMaestra}', [ContrasenaMaestraController::class, 'destroy'])->name('contraseñas.destroy');
     });
 
+    // ===== ROLES =====
+    Route::prefix('roles')->name('roles.')->middleware(['auth', 'empresa.activa'])->group(function () {
+        Route::get('/', [RoleController::class, 'index'])->name('index')->middleware('permiso:ver_roles');
+        Route::get('/create', [RoleController::class, 'create'])->name('create')->middleware('permiso:crear_roles');
+        Route::post('/', [RoleController::class, 'store'])->name('store')->middleware('permiso:crear_roles');
+        Route::get('/export', [RoleController::class, 'export'])->name('export')->middleware('permiso:ver_roles');
+        Route::get('/{role}', [RoleController::class, 'show'])->name('show')->middleware('permiso:ver_roles');
+        Route::get('/{role}/edit', [RoleController::class, 'edit'])->name('edit')->middleware('permiso:editar_roles');
+        Route::put('/{role}', [RoleController::class, 'update'])->name('update')->middleware('permiso:editar_roles');
+        Route::delete('/{role}', [RoleController::class, 'destroy'])->name('destroy')->middleware('permiso:eliminar_roles');
+    });
+
+    // ===== INVENTARIO MOVIMIENTOS =====
+    Route::prefix('inventario')->name('inventario.')->middleware(['auth', 'empresa.activa'])->group(function () {
+        Route::get('/movimientos', [InventarioMovimientoController::class, 'index'])->name('movimientos')->middleware('permiso:ver_inventario');
+        Route::get('/movimientos/create', [InventarioMovimientoController::class, 'create'])->name('movimientos.create')->middleware('permiso:crear_inventario');
+        Route::post('/movimientos', [InventarioMovimientoController::class, 'store'])->name('movimientos.store')->middleware('permiso:crear_inventario');
+        Route::get('/movimientos/export', [InventarioMovimientoController::class, 'export'])->name('movimientos.export')->middleware('permiso:ver_inventario');
+    });
+
+    // ===== CAJA =====
+    Route::prefix('caja')->name('cajas.')->middleware(['auth', 'empresa.activa'])->group(function () {
+        // Gestión de cajas
+        Route::get('/cajas', [CajaController::class, 'indexCajas'])->name('cajas.index')->middleware('permiso:ver_cajas');
+        Route::get('/cajas/create', [CajaController::class, 'createCaja'])->name('cajas.create')->middleware('permiso:crear_caja');
+        Route::post('/cajas', [CajaController::class, 'storeCaja'])->name('cajas.store')->middleware('permiso:crear_caja');
+        Route::get('/cajas/{caja}/edit', [CajaController::class, 'editCaja'])->name('cajas.edit')->middleware('permiso:editar_caja');
+        Route::put('/cajas/{caja}', [CajaController::class, 'updateCaja'])->name('cajas.update')->middleware('permiso:editar_caja');
+        Route::delete('/cajas/{caja}', [CajaController::class, 'destroyCaja'])->name('cajas.destroy')->middleware('permiso:eliminar_caja');
+
+        // Apertura/Cierre
+        Route::get('/apertura', [CajaController::class, 'aperturaIndex'])->name('apertura')->middleware('permiso:abrir_caja');
+        Route::post('/abrir', [CajaController::class, 'abrirCaja'])->name('abrir')->middleware('permiso:abrir_caja');
+        Route::post('/cerrar', [CajaController::class, 'cerrarCaja'])->name('cerrar')->middleware('permiso:cerrar_caja');
+
+        // Operaciones
+        Route::get('/operaciones', [CajaController::class, 'operaciones'])->name('operaciones')->middleware('permiso:ver_movimientos_caja');
+        Route::post('/movimiento', [CajaController::class, 'registrarMovimiento'])->name('movimiento.registrar')->middleware('permiso:registrar_movimiento_caja');
+
+        // Arqueos
+        Route::get('/arqueos', [CajaController::class, 'arqueos'])->name('arqueos')->middleware('permiso:realizar_arqueo');
+        Route::post('/arqueo/registrar', [CajaController::class, 'registrarArqueo'])->name('arqueo.registrar')->middleware('permiso:realizar_arqueo');
+        Route::get('/arqueo/{arqueo}', [CajaController::class, 'verArqueo'])->name('arqueo.ver')->middleware('permiso:ver_arqueos');
+        Route::get('/arqueo/{arqueo}/imprimir', [CajaController::class, 'imprimirArqueo'])->name('arqueo.imprimir')->middleware('permiso:imprimir_arqueo_caja');
+
+        // Autorizaciones
+        Route::get('/autorizaciones', [CajaController::class, 'autorizacionesPendientes'])->name('autorizaciones')->middleware('permiso:ver_autorizaciones_caja');
+        Route::post('/movimiento/{movimientoId}/autorizar', [CajaController::class, 'autorizarMovimiento'])->name('movimiento.autorizar')->middleware('permiso:autorizar_movimiento');
+
+        // Transferencias
+        Route::get('/transferencias', [CajaController::class, 'transferencias'])->name('transferencias')->middleware('permiso:ver_transferencias_caja');
+        Route::post('/transferencia/solicitar', [CajaController::class, 'solicitarTransferencia'])->name('transferencia.solicitar')->middleware('permiso:solicitar_transferencia_caja');
+        Route::post('/transferencia/{transferenciaId}/autorizar', [CajaController::class, 'autorizarTransferencia'])->name('transferencia.autorizar')->middleware('permiso:autorizar_transferencia');
+
+        // Reportes
+        Route::get('/reporte/{aperturaId}', [CajaController::class, 'reporteDia'])->name('reporte.dia')->middleware('permiso:ver_reporte_caja_diario');
+
+        // Tickets
+        Route::get('/movimiento/{movimiento}/ticket', [CajaController::class, 'imprimirTicketMovimiento'])->name('movimiento.ticket');
+        Route::get('/transferencia/{transferencia}/ticket', [CajaController::class, 'imprimirTicketTransferencia'])->name('transferencia.ticket');
+        Route::get('/arqueo/{arqueo}/ticket', [CajaController::class, 'imprimirTicketArqueo'])->name('arqueo.ticket');
+        Route::get('/cierre/{apertura}/ticket', [CajaController::class, 'imprimirTicketCierre'])->name('cierre.ticket');
+
+        // Retiros
+        Route::post('/retiro/registrar', [CajaController::class, 'registrarRetiro'])->name('retiro.registrar')->middleware('permiso:registrar_movimiento_caja');
+
+        // Ver apertura
+        Route::get('/apertura/{apertura}/ver', [CajaController::class, 'verApertura'])->name('verApertura')->middleware('permiso:ver_apertura_cierre');
+    });
+
     // ===== REPORTES DE CAJA =====
-    Route::prefix('reportes')->name('reportes.')->group(function () {
-        Route::get('/caja-dashboard', [ReporteCajaController::class, 'dashboard'])
-            ->middleware(['permiso:ver_dashboard_caja'])
-            ->name('caja.dashboard');
+    Route::prefix('reportes')->name('reportes.')->middleware(['auth', 'empresa.activa'])->group(function () {
+        Route::get('/caja-dashboard', [ReporteCajaController::class, 'dashboard'])->name('caja.dashboard')->middleware('permiso:ver_dashboard_caja');
+        Route::get('/caja-exportar', [ReporteCajaController::class, 'exportar'])->name('caja.exportar')->middleware('permiso:exportar_reportes_caja');
+    });
 
-        Route::get('/caja-exportar', [ReporteCajaController::class, 'exportar'])
-            ->middleware(['permiso:exportar_reportes_caja'])
-            ->name('caja.exportar');
-    });
-    // ===== DASHBOARD DE CAJA =====
-    Route::get('/dashboard-caja', [DashboardCajaController::class, 'index'])
-        ->middleware(['permiso:ver_dashboard_caja'])
-        ->name('dashboard.caja');
-    // ===== VENTAS =====
-    Route::prefix('ventas')->name('ventas.')->middleware(['auth', 'empresa.activa'])->group(function () {
-        Route::get('/', [VentaController::class, 'index'])->name('index');
-        Route::post('/contado/store', [VentaController::class, 'storeContado'])->name('contado.store');
-        Route::post('/credito/store', [VentaController::class, 'storeCredito'])->name('credito.store');
-        Route::get('/historial', [VentaController::class, 'historial'])->name('historial');
-        Route::get('/{id}/ticket', [VentaController::class, 'ticket'])->name('ticket');
-        Route::get('/{id}', [VentaController::class, 'show'])->name('show');
-    });
-    // ===== COTIZACIONES =====
-    Route::prefix('cotizaciones')->name('cotizaciones.')->middleware(['auth', 'empresa.activa'])->group(function () {
-        Route::get('/', [CotizacionController::class, 'index'])->name('index');
-        Route::post('/store', [CotizacionController::class, 'store'])->name('store');
-        Route::get('/{id}/pdf', [CotizacionController::class, 'pdf'])->name('pdf');
-        Route::get('/{id}/download', [CotizacionController::class, 'download'])->name('download');  // ← Agregar esta línea
-
-        Route::get('/{id}', [CotizacionController::class, 'show'])->name('show');
-        Route::delete('/{id}', [CotizacionController::class, 'destroy'])->name('destroy');
-        Route::post('/{id}/cargar-carrito', [CotizacionController::class, 'cargarCarrito'])->name('cargar-carrito');
-    });
-    // ===== CARRITO =====
-    Route::prefix('carrito')->name('carrito.')->middleware(['auth', 'empresa.activa'])->group(function () {
-        Route::get('/obtener', [CarritoController::class, 'obtener'])->name('obtener');
-        Route::post('/agregar', [CarritoController::class, 'agregar'])->name('agregar');
-        Route::delete('/item/{index}', [CarritoController::class, 'eliminarItem'])->name('eliminar-item');
-        Route::put('/item/{index}/cantidad', [CarritoController::class, 'actualizarCantidad'])->name('actualizar-cantidad');
-        Route::delete('/limpiar', [CarritoController::class, 'limpiar'])->name('limpiar');
-        Route::post('/cargar-cotizacion/{cotizacionId}', [CarritoController::class, 'cargarCotizacion'])->name('cargar-cotizacion');
-    });
     // ===== VENTAS =====
     Route::prefix('ventas')->name('ventas.')->middleware(['auth', 'empresa.activa'])->group(function () {
         Route::get('/', [VentaController::class, 'index'])->name('index');
@@ -479,18 +319,55 @@ Route::middleware(['auth', 'empresa.activa'])->group(function () {
         Route::get('/{id}', [VentaController::class, 'show'])->name('show');
         Route::get('/credito/{creditoId}/pagares', [VentaController::class, 'imprimirPagares'])->name('pagares');
     });
-    Route::prefix('cobranza')->name('cobranza.')->middleware(['auth', 'empresa.activa'])->group(function () {
-        // Rutas fijas (sin parámetros o con parámetros explícitos) PRIMERO
-        Route::get('/creditos', [CobranzaController::class, 'index'])->name('index');
-        Route::post('/abono', [CobranzaController::class, 'registrarAbono'])->name('abono.store');
-        Route::post('/pagare/{id}/pagar', [CobranzaController::class, 'pagarPagare'])->name('pagare.pagar');
-        Route::get('/historial', [CobranzaController::class, 'historialGeneral'])->name('historial');
-        Route::get('/condonaciones', [CobranzaController::class, 'condonaciones'])->name('condonaciones');
-        Route::post('/condonar', [CobranzaController::class, 'condonarAdeudo'])->name('condonar');
-        Route::get('/historial/{id}', [CobranzaController::class, 'historialPagos'])->name('historial.pagos');
 
-        // Ruta dinámica AL FINAL
-        Route::get('/{id}', [CobranzaController::class, 'show'])->name('show');
+    // ===== COTIZACIONES =====
+    Route::prefix('cotizaciones')->name('cotizaciones.')->middleware(['auth', 'empresa.activa'])->group(function () {
+        Route::get('/', [CotizacionController::class, 'index'])->name('index');
+        Route::post('/store', [CotizacionController::class, 'store'])->name('store');
+        Route::get('/{id}/pdf', [CotizacionController::class, 'pdf'])->name('pdf');
+        Route::get('/{id}/download', [CotizacionController::class, 'download'])->name('download');
+        Route::get('/{id}', [CotizacionController::class, 'show'])->name('show');
+        Route::delete('/{id}', [CotizacionController::class, 'destroy'])->name('destroy');
+        Route::post('/{id}/cargar-carrito', [CotizacionController::class, 'cargarCarrito'])->name('cargar-carrito');
+    });
+
+    // ===== CARRITO =====
+    Route::prefix('carrito')->name('carrito.')->middleware(['auth', 'empresa.activa'])->group(function () {
+        Route::get('/obtener', [CarritoController::class, 'obtener'])->name('obtener');
+        Route::post('/agregar', [CarritoController::class, 'agregar'])->name('agregar');
+        Route::delete('/item/{index}', [CarritoController::class, 'eliminarItem'])->name('eliminar-item');
+        Route::put('/item/{index}/cantidad', [CarritoController::class, 'actualizarCantidad'])->name('actualizar-cantidad');
+        Route::delete('/limpiar', [CarritoController::class, 'limpiar'])->name('limpiar');
+        Route::post('/cargar-cotizacion/{cotizacionId}', [CarritoController::class, 'cargarCotizacion'])->name('cargar-cotizacion');
+    });
+
+    // ===== COBRANZA =====
+    Route::prefix('cobranza')->name('cobranza.')->middleware(['auth', 'empresa.activa'])->group(function () {
+        Route::get('/creditos', [CobranzaController::class, 'index'])->name('index')->middleware('permiso:ver_cobranza');
+        Route::post('/abono', [CobranzaController::class, 'registrarAbono'])->name('abono.store')->middleware('permiso:registrar_abono');
+        Route::post('/pagare/{id}/pagar', [CobranzaController::class, 'pagarPagare'])->name('pagare.pagar')->middleware('permiso:pagar_pagare');
+        Route::get('/historial', [CobranzaController::class, 'historialGeneral'])->name('historial')->middleware('permiso:ver_historial_cobranza');
+        Route::get('/condonaciones', [CobranzaController::class, 'condonaciones'])->name('condonaciones')->middleware('permiso:ver_condonaciones');
+        Route::post('/condonar', [CobranzaController::class, 'condonarAdeudo'])->name('condonar')->middleware('permiso:condonar_adeudo');
+        Route::get('/historial/{id}', [CobranzaController::class, 'historialPagos'])->name('historial.pagos')->middleware('permiso:ver_historial_cobros');
+        Route::get('/{id}', [CobranzaController::class, 'show'])->name('show')->middleware('permiso:ver_cobranza');
+    });
+
+    // ===== REPORTES GENERALES =====
+    Route::prefix('reportes')->name('reportes.')->middleware(['auth', 'empresa.activa'])->group(function () {
+        Route::get('/ventas', [ReporteController::class, 'ventas'])->name('ventas')->middleware('permiso:ver_reportes');
+        Route::get('/inventario', [ReporteController::class, 'inventario'])->name('inventario')->middleware('permiso:ver_reportes');
+        Route::get('/cobranza', [ReporteController::class, 'cobranza'])->name('cobranza')->middleware('permiso:ver_reportes');
+        Route::get('/ventas/exportar', [ReporteController::class, 'exportarVentas'])->name('ventas.exportar')->middleware('permiso:ver_reportes');
+        Route::get('/cobranza/exportar', [ReporteController::class, 'exportarCobranza'])->name('cobranza.exportar')->middleware('permiso:ver_reportes');
+    });
+
+    // ===== RESPALDOS =====
+    Route::prefix('respaldos')->name('respaldos.')->middleware(['auth', 'empresa.activa'])->group(function () {
+        Route::get('/', [RespaldoController::class, 'index'])->name('index')->middleware('permiso:ver_respaldos');
+        Route::get('/exportar/excel', [RespaldoController::class, 'exportarExcel'])->name('exportar.excel')->middleware('permiso:generar_respaldo');
+        Route::get('/exportar/sql', [RespaldoController::class, 'exportarSQL'])->name('exportar.sql')->middleware('permiso:generar_respaldo');
+        Route::post('/importar', [RespaldoController::class, 'importar'])->name('importar')->middleware('permiso:importar_datos');
     });
 });
 
