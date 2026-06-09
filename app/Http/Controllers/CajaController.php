@@ -884,12 +884,7 @@ class CajaController extends Controller
             return back()->with('error', 'Error al cargar la apertura.');
         }
     }
-    /**
-     * Cerrar una caja abierta
-     */
-    /**
-     * Cerrar una caja abierta
-     */
+
     public function cerrarCaja(Request $request)
     {
         // Detectar si es petición AJAX
@@ -926,19 +921,24 @@ class CajaController extends Controller
                 throw new \Exception('Esta caja ya está cerrada o fue suspendida.');
             }
 
-            // Permisos
+            // Verificar permisos y contraseña maestra
             if (!$user->hasRole('Super Admin') && $apertura->user_id != $user->id) {
-                throw new \Exception('No tienes permiso para cerrar esta caja. Solo puedes cerrar tus propias aperturas.');
+                throw new \Exception('No tienes permiso para cerrar esta caja.');
             }
 
+            // Super Admin o Admin cerrando caja de otro usuario
             if ($user->hasRole('Super Admin') && $apertura->user_id != $user->id) {
                 if (empty($validated['password_maestra'])) {
                     throw new \Exception('Debes ingresar la contraseña maestra para cerrar una caja de otro usuario.');
                 }
-                // Aquí valida la contraseña maestra si tienes implementado
-                // if (!Hash::check($validated['password_maestra'], $user->contrasena_maestra)) {
-                //     throw new \Exception('Contraseña maestra incorrecta.');
-                // }
+
+                // Validar contraseña maestra según rol
+                $tipo = $user->hasRole('Super Admin') ? 'super_admin' : 'admin';
+                $passwordValida = \App\Models\ContrasenaMaestra::verificarPassword($user->id, $validated['password_maestra'], $tipo);
+
+                if (!$passwordValida) {
+                    throw new \Exception('Contraseña maestra incorrecta.');
+                }
             }
 
             // Verificar retiros pendientes

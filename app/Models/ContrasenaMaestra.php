@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Hash;
 
 class ContrasenaMaestra extends Model
 {
@@ -29,6 +30,31 @@ class ContrasenaMaestra extends Model
     
     public function verificar($password)
     {
-        return \Hash::check($password, $this->password_hash);
+        return Hash::check($password, $this->password_hash);
+    }
+    /**
+     * Verificar contraseña maestra para un usuario
+     */
+    public static function verificarPassword($userId, $password, $tipo = null)
+    {
+        $query = self::where('user_id', $userId)
+            ->where('activo', true);
+        
+        if ($tipo) {
+            $query->where('tipo', $tipo);
+        }
+        
+        $contrasena = $query->first();
+        
+        if (!$contrasena) {
+            return false;
+        }
+        
+        if ($contrasena->verificar($password)) {
+            $contrasena->update(['ultimo_uso' => now()]);
+            return true;
+        }
+        
+        return false;
     }
 }

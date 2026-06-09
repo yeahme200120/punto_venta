@@ -14,6 +14,7 @@ use App\Models\Producto;
 use App\Models\Cliente;
 use App\Models\FormaPago;
 use App\Models\TicketConfiguracion;
+use App\Traits\ActivaTrait;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -21,33 +22,28 @@ use Barryvdh\DomPDF\Facade\Pdf;
 
 class VentaController extends Controller
 {
-    private function empresaActivaId()
-    {
-        if (auth()->user()->hasRole('Super Admin')) {
-            return session('empresa_activa_id', auth()->user()->empresa_id);
-        }
-        return auth()->user()->empresa_id;
-    }
-
-    private function sucursalActivaId()
-    {
-        if (auth()->user()->hasRole('Super Admin')) {
-            return session('sucursal_activa_id');
-        }
-        return auth()->user()->sucursal_id;
-    }
+    use ActivaTrait;
 
     private function getCajaAbierta()
     {
+        $user = auth()->user();
         $sucursalId = $this->sucursalActivaId();
         $userId = auth()->id();
 
-        $apertura = CajaApertura::where('sucursal_id', $sucursalId)
-            ->where('user_id', $userId)
-            ->where('estado', 'abierta')
-            ->first();
+        $query = CajaApertura::where('sucursal_id', $sucursalId)
+            ->where('estado', 'abierta');
+
+        // Vendedores y Cajeros solo pueden usar su propia caja
+        if (!$user->hasRole('Super Admin') && !$user->hasRole('Administrador')) {
+            $query->where('user_id', $userId);
+        }
+
+        $apertura = $query->first();
 
         if (!$apertura) {
+            if ($user->hasRole('Administrador')) {
+                throw new \Exception('No hay una caja abierta en esta sucursal. Debes abrir una caja primero.');
+            }
             throw new \Exception('No tienes una caja abierta. Debes abrir una caja primero.');
         }
 

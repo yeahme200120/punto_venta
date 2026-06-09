@@ -269,7 +269,6 @@ class PermisoSeeder extends Seeder
 
         // ===== VENDEDOR =====
         $vendedor->syncPermissions([
-            'ver_dashboard',
             'ver_inventario',
             'ver_productos',
             'ver_insumos',
@@ -301,9 +300,6 @@ class PermisoSeeder extends Seeder
             'ver_historial_ventas',
             'ver_cotizaciones',
             'ver_proveedores',
-            'ver_facturacion',
-            'crear_facturacion',
-            'ver_facturas',
             'ver_clientes',
             'crear_clientes',
 
@@ -334,7 +330,6 @@ class PermisoSeeder extends Seeder
 
         // ===== COBRADOR =====
         $cobrador->syncPermissions([
-            'ver_dashboard',
             'ver_ventas',
             'ver_facturacion',
             'ver_facturas',
