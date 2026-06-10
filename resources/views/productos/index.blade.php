@@ -13,6 +13,7 @@
 
 @section('content')
 
+    {{-- Componente para mensajes flash con SweetAlert --}}
     <x-alert type="success" :message="session('success')" />
     <x-alert type="error" :message="session('error')" />
 
@@ -28,12 +29,14 @@
                 <span class="px-2 py-1 text-xs rounded-full bg-cyan-100 text-cyan-700">📍 {{ $sucursalActiva->nombre }}</span>
             @endif
         </div>
-        @if(auth()->user()->hasRole(['Super Admin', 'Administrador']))
+        
+        {{-- Exportar Excel: Solo usuarios con permiso exportar_productos --}}
+        @can('exportar_productos')
             <a href="{{ route('productos.export') }}"
                 class="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white transition bg-green-600 shadow rounded-xl hover:bg-green-700">
                 📥 Exportar Excel
             </a>
-        @endif
+        @endcan
     </div>
 
     <div class="overflow-hidden bg-white shadow-lg rounded-3xl">
@@ -42,9 +45,14 @@
                 <h2 class="text-lg font-semibold text-slate-800">Lista de productos</h2>
                 <p class="mt-1 text-sm text-gray-500">Gestiona tu inventario</p>
             </div>
+            
+            {{-- Crear producto: Solo usuarios con permiso crear_productos --}}
+            @can('crear_productos')
             <a href="{{ route('productos.create') }}"
-                class="px-4 py-2 text-sm font-medium text-white transition shadow bg-gradient-to-r from-indigo-600 to-cyan-500 rounded-xl hover:from-indigo-700 hover:to-cyan-600">+
-                Nuevo producto</a>
+                class="px-4 py-2 text-sm font-medium text-white transition shadow bg-gradient-to-r from-indigo-600 to-cyan-500 rounded-xl hover:from-indigo-700 hover:to-cyan-600">
+                + Nuevo producto
+            </a>
+            @endcan
         </div>
 
         <div class="overflow-x-auto">
@@ -62,7 +70,7 @@
                 </thead>
                 <tbody class="divide-y divide-gray-200">
                     @forelse($productos as $producto)
-                        <tr
+                        <tr id="producto-row-{{ $producto->id }}"
                             class="hover:bg-gray-50 transition {{ $producto->stock <= $producto->stock_minimo ? 'bg-red-50' : '' }}">
                             <td class="px-6 py-4">
                                 <div class="flex items-center gap-3">
@@ -83,7 +91,7 @@
                             </td>
                             <td class="px-6 py-4 text-sm text-gray-500">{{ $producto->categoria->nombre ?? '—' }}</td>
                             <td class="px-6 py-4 text-center">
-                                <span
+                                <span id="stock-{{ $producto->id }}"
                                     class="font-semibold {{ $producto->stock <= $producto->stock_minimo ? 'text-red-600' : 'text-slate-800' }}">
                                     {{ number_format($producto->stock, 2) }}
                                 </span>
@@ -94,21 +102,40 @@
                             <td class="px-6 py-4 font-medium text-center">${{ number_format($producto->precio_venta, 2) }}</td>
                             <td class="px-6 py-4 text-sm text-center text-gray-500">{{ $producto->insumos->count() }}</td>
                             <td class="px-6 py-4 text-center">
-                                @if($producto->activo) <span class="text-sm text-green-600">● Activo</span>
-                                @else <span class="text-sm text-red-600">● Inactivo</span> @endif
+                                <span id="estado-{{ $producto->id }}" class="text-sm {{ $producto->activo ? 'text-green-600' : 'text-red-600' }}">
+                                    {{ $producto->activo ? '● Activo' : '● Inactivo' }}
+                                </span>
                             </td>
                             <td class="px-6 py-4">
                                 <div class="flex items-center justify-end gap-2">
+                                    {{-- Ver detalle: Todos los usuarios autenticados --}}
+                                    @auth
                                     <a href="{{ route('productos.show', $producto) }}"
                                         class="p-2 text-gray-400 transition hover:text-indigo-600" title="Ver">👁️</a>
+                                    @endauth
+                                    
+                                    {{-- Editar: Solo usuarios con permiso editar_productos --}}
+                                    @can('editar_productos')
                                     <a href="{{ route('productos.edit', $producto) }}"
                                         class="p-2 text-gray-400 transition hover:text-amber-600" title="Editar">✏️</a>
-                                    <form action="{{ route('productos.destroy', $producto) }}" method="POST" class="inline"
-                                        onsubmit="return confirm('¿Eliminar este producto?')">
-                                        @csrf @method('DELETE')
-                                        <button class="p-2 text-gray-400 transition hover:text-red-600"
-                                            title="Eliminar">🗑️</button>
-                                    </form>
+                                    @endcan
+                                    
+                                    {{-- Desactivar/Reactivar: Solo usuarios con permiso editar_productos --}}
+                                    @can('editar_productos')
+                                        @if($producto->activo)
+                                        <button type="button"
+                                            class="p-2 text-gray-400 transition btn-desactivar hover:text-red-600"
+                                            data-id="{{ $producto->id }}"
+                                            data-nombre="{{ $producto->nombre }}"
+                                            title="Desactivar">🗑️</button>
+                                        @else
+                                        <button type="button"
+                                            class="p-2 text-gray-400 transition btn-reactivar hover:text-green-600"
+                                            data-id="{{ $producto->id }}"
+                                            data-nombre="{{ $producto->nombre }}"
+                                            title="Reactivar">✅</button>
+                                        @endif
+                                    @endcan
                                 </div>
                             </td>
                         </tr>
@@ -123,3 +150,115 @@
         <div class="px-6 py-4 border-t">{{ $productos->links() }}</div>
     </div>
 @endsection
+
+@push('scripts')
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Configurar Axios
+        axios.defaults.headers.common['X-CSRF-TOKEN'] = document.querySelector('meta[name="csrf-token"]').content;
+        axios.defaults.headers.common['Accept'] = 'application/json';
+        
+        // Función para mostrar Swal
+        function showSwal(icon, title, message, reload = false) {
+            Swal.fire({
+                icon: icon,
+                title: title,
+                text: message,
+                confirmButtonText: 'Cerrar'
+            }).then(() => {
+                if (reload) {
+                    location.reload();
+                }
+            });
+        }
+        
+        // ==================== DESACTIVAR PRODUCTO ====================
+        const desactivarBtns = document.querySelectorAll('.btn-desactivar');
+        
+        desactivarBtns.forEach(btn => {
+            btn.addEventListener('click', async () => {
+                const { id, nombre } = btn.dataset;
+                
+                const confirm = await Swal.fire({
+                    title: '¿Desactivar producto?',
+                    html: `Producto: <strong>${nombre}</strong><br><br>El producto quedará inactivo pero sus datos se conservarán.`,
+                    icon: 'warning',
+                    showCancelButton: true,
+                    confirmButtonColor: '#d33',
+                    confirmButtonText: 'Sí, desactivar',
+                    cancelButtonText: 'Cancelar'
+                });
+                
+                if (confirm.isConfirmed) {
+                    Swal.fire({
+                        title: 'Desactivando...',
+                        allowOutsideClick: false,
+                        didOpen: () => Swal.showLoading()
+                    });
+                    
+                    try {
+                        const response = await axios.delete(`/productos/${id}`);
+                        const data = response.data;
+                        
+                        Swal.fire({
+                            icon: data.icon || 'success',
+                            title: 'Desactivado',
+                            text: data.message,
+                            confirmButtonText: 'Cerrar'
+                        }).then(() => {
+                            location.reload();
+                        });
+                    } catch (error) {
+                        const msg = error.response?.data?.message || 'Error al desactivar el producto';
+                        showSwal('error', 'Error', msg);
+                    }
+                }
+            });
+        });
+        
+        // ==================== REACTIVAR PRODUCTO ====================
+        const reactivarBtns = document.querySelectorAll('.btn-reactivar');
+        
+        reactivarBtns.forEach(btn => {
+            btn.addEventListener('click', async () => {
+                const { id, nombre } = btn.dataset;
+                
+                const confirm = await Swal.fire({
+                    title: '¿Reactivar producto?',
+                    html: `Producto: <strong>${nombre}</strong><br><br>El producto volverá a estar activo en el sistema.`,
+                    icon: 'question',
+                    showCancelButton: true,
+                    confirmButtonColor: '#10b981',
+                    confirmButtonText: 'Sí, reactivar',
+                    cancelButtonText: 'Cancelar'
+                });
+                
+                if (confirm.isConfirmed) {
+                    Swal.fire({
+                        title: 'Reactivando...',
+                        allowOutsideClick: false,
+                        didOpen: () => Swal.showLoading()
+                    });
+                    
+                    try {
+                        const response = await axios.put(`/productos/${id}/reactivar`);
+                        const data = response.data;
+                        
+                        Swal.fire({
+                            icon: data.icon || 'success',
+                            title: 'Reactivado',
+                            text: data.message,
+                            confirmButtonText: 'Cerrar'
+                        }).then(() => {
+                            location.reload();
+                        });
+                    } catch (error) {
+                        const msg = error.response?.data?.message || 'Error al reactivar el producto';
+                        showSwal('error', 'Error', msg);
+                    }
+                }
+            });
+        });
+    });
+</script>
+@endpush

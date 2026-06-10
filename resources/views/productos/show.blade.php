@@ -30,7 +30,7 @@
                     <div class="relative">
                         <div class="w-48 h-48 overflow-hidden bg-gray-100 border rounded-xl">
                             @if($producto->imagen_principal)
-                                <img src="{{ $producto->imagen_principal }}" class="object-cover w-full h-full"
+                                <img id="imagenPrincipal" src="{{ $producto->imagen_principal }}" class="object-cover w-full h-full"
                                     alt="{{ $producto->nombre }}">
                             @else
                                 <div class="flex items-center justify-center w-full h-full text-6xl">📦</div>
@@ -40,7 +40,7 @@
                             <div class="flex gap-1 mt-2">
                                 @foreach($producto->imagenes->take(3) as $img)
                                     <div class="w-10 h-10 overflow-hidden bg-gray-100 border rounded-lg cursor-pointer hover:opacity-80"
-                                        onclick="document.querySelector('.w-48 .rounded-xl img').src='{{ $img->url }}'">
+                                        onclick="document.getElementById('imagenPrincipal').src='{{ $img->url }}'">
                                         <img src="{{ $img->url }}" class="object-cover w-full h-full">
                                     </div>
                                 @endforeach
@@ -62,19 +62,28 @@
                 </div>
             </div>
             <div class="flex gap-2">
+                {{-- Editar: Solo Super Admin y Administrador --}}
+                @if(auth()->user()->hasRole(['Super Admin', 'Administrador']))
                 <a href="{{ route('productos.edit', $producto) }}"
                     class="px-4 py-2 text-sm font-medium text-white transition shadow bg-amber-500 rounded-xl hover:bg-amber-600">✏️
                     Editar</a>
-                <button onclick="toggleActivo({{ $producto->id }})"
-                    class="px-4 py-2 {{ $producto->activo ? 'bg-red-500 hover:bg-red-600' : 'bg-green-500 hover:bg-green-600' }} text-white rounded-xl transition font-medium shadow text-sm">
+                @endif
+                
+                {{-- Activar/Desactivar: Solo Super Admin y Administrador --}}
+                @if(auth()->user()->hasRole(['Super Admin', 'Administrador']))
+                <button id="btnToggleActivo"
+                    data-id="{{ $producto->id }}"
+                    data-activo="{{ $producto->activo ? 'true' : 'false' }}"
+                    class="btn-toggle-activo px-4 py-2 {{ $producto->activo ? 'bg-red-500 hover:bg-red-600' : 'bg-green-500 hover:bg-green-600' }} text-white rounded-xl transition font-medium shadow text-sm">
                     {{ $producto->activo ? '🔴 Desactivar' : '🟢 Activar' }}
                 </button>
+                @endif
             </div>
         </div>
 
         <div class="grid grid-cols-2 gap-4 mb-6 md:grid-cols-5">
             <div class="p-4 text-center bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl">
-                <p class="text-2xl font-bold {{ $producto->stock <= $producto->stock_minimo ? 'text-red-600' : 'text-indigo-600' }}">
+                <p id="stockValue" class="text-2xl font-bold {{ $producto->stock <= $producto->stock_minimo ? 'text-red-600' : 'text-indigo-600' }}">
                     {{ number_format($producto->stock, 2) }}
                 </p>
                 <p class="text-xs text-gray-500">Stock Actual</p>
@@ -184,33 +193,78 @@
     </div>
 </div>
 
+@push('scripts')
 <script>
-function toggleActivo(productoId) {
-    fetch(`/productos/${productoId}/toggle-activo`, {
-        method: 'POST',
-        headers: {
-            'X-CSRF-TOKEN': '{{ csrf_token() }}',
-            'Content-Type': 'application/json'
-        }
-    }).then(response => response.json()).then(data => {
-        if (data.success) {
-            location.reload();
-        } else {
+    document.addEventListener('DOMContentLoaded', function() {
+        // Configurar Axios
+        axios.defaults.headers.common['X-CSRF-TOKEN'] = document.querySelector('meta[name="csrf-token"]').content;
+        axios.defaults.headers.common['Accept'] = 'application/json';
+        axios.defaults.headers.common['Content-Type'] = 'application/json';
+        
+        // Función para mostrar Swal
+        function showSwal(icon, title, message, reload = false) {
             Swal.fire({
-                icon: 'error',
-                title: 'Error',
-                text: data.message || 'Error al cambiar estado',
-                confirmButtonColor: '#4f46e5'
+                icon: icon,
+                title: title,
+                text: message,
+                confirmButtonText: 'Cerrar'
+            }).then(() => {
+                if (reload) {
+                    location.reload();
+                }
             });
         }
-    }).catch(error => {
-        Swal.fire({
-            icon: 'error',
-            title: 'Error',
-            text: 'Error de conexión',
-            confirmButtonColor: '#4f46e5'
-        });
+        
+        // ==================== TOGGLE ACTIVO/DESACTIVO ====================
+        const btnToggle = document.getElementById('btnToggleActivo');
+        
+        if (btnToggle) {
+            btnToggle.addEventListener('click', async () => {
+                const id = btnToggle.dataset.id;
+                const activo = btnToggle.dataset.activo === 'true';
+                const accion = activo ? 'desactivar' : 'activar';
+                
+                const confirm = await Swal.fire({
+                    title: `¿${accion === 'activar' ? 'Activar' : 'Desactivar'} producto?`,
+                    html: `Producto: <strong>{{ $producto->nombre }}</strong><br><br>${activo ? 'El producto quedará inactivo.' : 'El producto volverá a estar activo.'}`,
+                    icon: 'warning',
+                    showCancelButton: true,
+                    confirmButtonColor: activo ? '#d33' : '#10b981',
+                    confirmButtonText: `Sí, ${accion}`,
+                    cancelButtonText: 'Cancelar'
+                });
+                
+                if (confirm.isConfirmed) {
+                    Swal.fire({
+                        title: 'Procesando...',
+                        allowOutsideClick: false,
+                        didOpen: () => Swal.showLoading()
+                    });
+                    
+                    try {
+                        const response = await axios.post(`/productos/${id}/toggle-activo`);
+                        const data = response.data;
+                        
+                        if (data.success) {
+                            Swal.fire({
+                                icon: 'success',
+                                title: accion === 'activar' ? 'Producto activado' : 'Producto desactivado',
+                                text: data.message,
+                                confirmButtonText: 'Cerrar'
+                            }).then(() => {
+                                location.reload();
+                            });
+                        } else {
+                            showSwal('error', 'Error', data.message);
+                        }
+                    } catch (error) {
+                        const msg = error.response?.data?.message || 'Error al cambiar el estado del producto';
+                        showSwal('error', 'Error', msg);
+                    }
+                }
+            });
+        }
     });
-}
 </script>
+@endpush
 @endsection

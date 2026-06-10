@@ -19,6 +19,7 @@ return new class extends Migration
             $table->string('icono')->nullable();
             $table->string('ruta')->nullable();
             $table->integer('orden')->default(0);
+            $table->string('permiso')->nullable();
             $table->boolean('activo')->default(true);
             $table->timestamps();
         });

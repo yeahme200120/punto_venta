@@ -100,6 +100,7 @@
     </div>
 
     @stack('scripts')
+    <x-swal-alert />
     <script>
         // Mostrar mensajes flash con SweetAlert
         document.addEventListener('DOMContentLoaded', function () {

@@ -77,9 +77,11 @@ class CategoriaController extends Controller
 
     public function show(Categoria $categoria)
     {
-        $categoria->load(['productos' => function($q) {
-            $q->orderBy('nombre');
-        }]);
+        $categoria->load([
+            'productos' => function ($q) {
+                $q->orderBy('nombre');
+            }
+        ]);
 
         return view('categorias.show', compact('categoria'));
     }
@@ -119,28 +121,6 @@ class CategoriaController extends Controller
         }
     }
 
-    public function destroy(Categoria $categoria)
-    {
-        if ($categoria->productos()->count() > 0) {
-            return back()->with('error', 'No se puede eliminar: tiene productos asignados.');
-        }
-
-        DB::beginTransaction();
-        try {
-            $nombre = $categoria->nombre;
-            $categoria->delete();
-            DB::commit();
-
-            return redirect()->route('categorias.index')
-                ->with('success', 'Categoría "' . $nombre . '" eliminada.');
-
-        } catch (\Exception $e) {
-            DB::rollBack();
-            Log::error('Error al eliminar categoría: ' . $e->getMessage());
-            return back()->with('error', 'Error al eliminar la categoría.');
-        }
-    }
-
     public function export()
     {
         try {
@@ -151,6 +131,73 @@ class CategoriaController extends Controller
         } catch (\Exception $e) {
             Log::error('Error al exportar categorías: ' . $e->getMessage());
             return back()->with('error', 'Error al generar el archivo Excel.');
+        }
+    }
+    public function destroy($id)
+    {
+        try {
+            if (!auth()->user()->hasRole(['Super Admin', 'Administrador'])) {
+                return response()->json([
+                    'success' => false,
+                    'icon' => 'error',
+                    'message' => 'No tienes permisos para desactivar categorías'
+                ], 403);
+            }
+
+            $categoria = Categoria::findOrFail($id);
+
+            // Verificar si tiene productos asociados
+            if ($categoria->productos_count > 0) {
+                return response()->json([
+                    'success' => false,
+                    'icon' => 'warning',
+                    'message' => 'No se puede desactivar la categoría porque tiene productos asociados'
+                ], 400);
+            }
+
+            $categoria->activo = false;
+            $categoria->save();
+
+            return response()->json([
+                'success' => true,
+                'icon' => 'success',
+                'message' => 'Categoría desactivada correctamente'
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'icon' => 'error',
+                'message' => 'Error: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function reactivar($id)
+    {
+        try {
+            if (!auth()->user()->hasRole(['Super Admin', 'Administrador'])) {
+                return response()->json([
+                    'success' => false,
+                    'icon' => 'error',
+                    'message' => 'No tienes permisos para reactivar categorías'
+                ], 403);
+            }
+
+            $categoria = Categoria::findOrFail($id);
+            $categoria->activo = true;
+            $categoria->save();
+
+            return response()->json([
+                'success' => true,
+                'icon' => 'success',
+                'message' => 'Categoría reactivada correctamente'
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'icon' => 'error',
+                'message' => 'Error: ' . $e->getMessage()
+            ], 500);
         }
     }
 }

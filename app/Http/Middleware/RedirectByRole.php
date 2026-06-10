@@ -3,13 +3,15 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\Menu;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 
 class RedirectByRole
 {
-     public function handle(Request $request, Closure $next)
+    public function handle(Request $request, Closure $next)
     {
         // Si no está autenticado, continuar
         if (!Auth::check()) {
@@ -24,6 +26,12 @@ class RedirectByRole
             }
         }
 
+        // ✅ PERMITIR RUTAS DEL CARRITO PARA TODOS LOS USUARIOS AUTENTICADOS
+        if ($request->is('carrito') || $request->is('carrito/*')) {
+            Log::info('Ruta de carrito permitida para: ' . $request->path());
+            return $next($request);
+        }
+
         $user = Auth::user();
 
         if (!$user) {
@@ -35,105 +43,99 @@ class RedirectByRole
             return $next($request);
         }
 
-        // 🔹 ADMINISTRADOR: Acceso a casi todo
-        if ($user->hasRole('Administrador')) {
-            // Rutas públicas que siempre puede acceder
-            $publicRoutes = ['dashboard', 'perfil', 'logout'];
-            if (in_array($request->path(), $publicRoutes)) {
-                return $next($request);
+        // 🔹 OBTENER RUTAS PERMITIDAS DINÁMICAMENTE SEGÚN PERMISOS DEL USUARIO
+        $rutasPermitidas = $this->obtenerRutasPermitidas($user);
+
+        // Verificar si la ruta actual está permitida
+        $rutaActual = $request->path();
+        $accesoPermitido = false;
+
+        foreach ($rutasPermitidas as $patron) {
+            if ($request->is($patron)) {
+                $accesoPermitido = true;
+                break;
             }
-            
-            // Verificar si la ruta actual está permitida
-            $allowedPrefixes = [
-                'dashboard', 'caja', 'ventas', 'clientes', 'productos',
-                'insumos', 'categorias', 'unidades-medida', 'proveedores',
-                'cobranza', 'formas-pago', 'ticket', 'usuarios', 'roles',
-                'reportes', 'respaldos', 'perfil', 'inventario', 'cotizaciones'
-            ];
-            
-            foreach ($allowedPrefixes as $prefix) {
-                if ($request->is($prefix . '*')) {
-                    return $next($request);
-                }
-            }
-            
-            return redirect()->route('dashboard');
         }
 
-        // 🔹 VENDEDOR: Acceso a ventas, clientes, productos, cotizaciones, carrito
-        if ($user->hasRole('Vendedor')) {
-            // Rutas permitidas para Vendedor
-            $allowedPatterns = [
-                'ventas*',        // Todas las rutas de ventas (index, historial, etc.)
-                'clientes*',      // Clientes
-                'productos*',     // Productos
-                'categorias*',    // Categorías
-                'cotizaciones*',  // Cotizaciones
-                'carrito*',       // Carrito
-                'perfil*',        // Perfil
-                'dashboard-exportar', // Exportar dashboard (si se necesita)
-                'logout',         // Cerrar sesión
-            ];
-            
-            foreach ($allowedPatterns as $pattern) {
-                if ($request->is($pattern)) {
-                    return $next($request);
-                }
-            }
-            
-            // Si intenta acceder a otra cosa, redirigir a ventas
-            return redirect()->route('ventas.index');
+        if ($accesoPermitido) {
+            return $next($request);
         }
 
-        // 🔹 CAJERO: Acceso a caja y ventas/historial
-        if ($user->hasRole('Cajero')) {
-            $allowedPatterns = [
-                'caja*',          // Todas las rutas de caja
-                'ventas/historial',
-                'clientes*',
-                'perfil*',
-                'dashboard-caja',
-                'reportes/caja-dashboard',
-                'logout',
-            ];
-            
-            foreach ($allowedPatterns as $pattern) {
-                if ($request->is($pattern)) {
-                    return $next($request);
+        // Si no tiene acceso, redirigir al dashboard o a su vista principal
+        $mensaje = '🔒 Acceso denegado. No tienes permiso para acceder a: ' . $rutaActual;
+        Log::warning('Acceso denegado (RedirectByRole): ' . $rutaActual . ' - Usuario: ' . $user->email);
+
+        $rutaRedireccion = $this->getHomeRoute($user);
+
+        return redirect()->route($rutaRedireccion)
+            ->with('swal_error', $mensaje);
+    }
+
+    /**
+     * Obtener rutas permitidas dinámicamente según los permisos del usuario
+     */
+    private function obtenerRutasPermitidas($user)
+    {
+        $rutasPermitidas = [];
+
+        // Obtener todos los menús a los que el usuario tiene acceso
+        $menus = Menu::where('activo', true)
+            ->whereNotNull('ruta')
+            ->get();
+
+        foreach ($menus as $menu) {
+            // Si el menú tiene un permiso específico, verificar que el usuario lo tenga
+            if ($menu->permiso) {
+                if ($user->can($menu->permiso)) {
+                    $rutasPermitidas[] = $this->convertirRutaAPatron($menu->ruta);
                 }
+            } else {
+                // Si no tiene permiso específico, permitir acceso (fallback)
+                $rutasPermitidas[] = $this->convertirRutaAPatron($menu->ruta);
             }
-            
-            return redirect()->route('cajas.operaciones');
         }
 
-        // 🔹 COBRADOR: Acceso a cobranza y clientes
-        if ($user->hasRole('Cobrador')) {
-            $allowedPatterns = [
-                'cobranza*',
-                'clientes*',
-                'perfil*',
-                'logout',
-            ];
-            
-            foreach ($allowedPatterns as $pattern) {
-                if ($request->is($pattern)) {
-                    return $next($request);
-                }
-            }
-            
-            return redirect()->route('cobranza.index');
+        // Agregar rutas base siempre permitidas
+        $rutasBase = [
+            'dashboard',
+            'perfil',
+            'perfil/*',
+            'logout',
+            'carrito',             // Carrito principal
+            'carrito/*',
+        ];
+
+        $rutasPermitidas = array_merge($rutasPermitidas, $rutasBase);
+
+        // Eliminar duplicados y vacíos
+        $rutasPermitidas = array_unique(array_filter($rutasPermitidas));
+
+        Log::info('Rutas permitidas para usuario ' . $user->email . ': ' . json_encode($rutasPermitidas));
+
+        return $rutasPermitidas;
+    }
+
+    /**
+     * Convertir una ruta a patrón para matching
+     * Ej: /clientes -> clientes*
+     *     /clientes/create -> clientes/create
+     *     /categorias -> categorias*
+     */
+    private function convertirRutaAPatron($ruta)
+    {
+        // Eliminar slash inicial
+        $ruta = ltrim($ruta, '/');
+
+        // Si la ruta tiene subrutas (ej: clientes/create), mantenerla exacta
+        // y también permitir subrutas hijas
+        if (strpos($ruta, '/') !== false) {
+            // Para rutas con múltiples segmentos, permitir exactamente esa ruta
+            // y sus subrutas
+            return $ruta . '*';
         }
 
-        // 🔹 CUALQUIER OTRO ROL: Solo acceso a productos y perfil
-        $allowedPatterns = ['productos*', 'perfil*', 'logout'];
-        foreach ($allowedPatterns as $pattern) {
-            if ($request->is($pattern)) {
-                return $next($request);
-            }
-        }
-        
-        // Redirigir a productos por defecto
-        return redirect()->route('productos.index');
+        // Para rutas simples, permitir toda la rama
+        return $ruta . '*';
     }
 
     /**
@@ -142,37 +144,33 @@ class RedirectByRole
     private function getHomeRoute($user)
     {
         $role = $user->getRoleNames()->first();
-        
-        $roleRoutes = [
-            'Super Admin' => route('dashboard'),
-            'Administrador' => route('dashboard'),
-            'Vendedor' => route('ventas.index'),
-            'Cajero' => route('cajas.operaciones'),
-            'Cobrador' => route('cobranza.index'),
-        ];
-        
-        if (isset($roleRoutes[$role])) {
-            return $roleRoutes[$role];
-        }
-        
-        // Cualquier otro rol no definido va a productos.index
-        return route('productos.index');
-    }
 
-    /**
-     * Obtener la ruta por defecto según el rol del usuario
-     * Si el rol no está definido, va a productos.index
-     */
-    private function getDefaultRouteByRole($user)
-    {
-        $role = $user->getRoleNames()->first();
-        
-        // Si no tiene rol definido, ir a productos.index
-        if (!$role) {
-            return 'productos.index';
+        // Priorizar la primera ruta a la que tenga acceso
+        $rutasPrioritarias = [
+            'ventas.index',
+            'cajas.operaciones',
+            'cobranza.index',
+            'dashboard',
+        ];
+
+        foreach ($rutasPrioritarias as $ruta) {
+            try {
+                $path = route($ruta, [], false);
+                $path = ltrim($path, '/');
+
+                // Verificar si el usuario tiene acceso a esta ruta
+                $menus = \App\Models\Menu::where('ruta', 'LIKE', '%' . $path . '%')->first();
+                if ($menus) {
+                    if (!$menus->permiso || $user->can($menus->permiso)) {
+                        return $ruta;
+                    }
+                }
+            } catch (\Exception $e) {
+                continue;
+            }
         }
-        
-        // Mapeo de roles conocidos a rutas por defecto
+
+        // Fallback por rol
         $roleRoutes = [
             'Super Admin' => 'dashboard',
             'Administrador' => 'dashboard',
@@ -180,13 +178,7 @@ class RedirectByRole
             'Cajero' => 'cajas.operaciones',
             'Cobrador' => 'cobranza.index',
         ];
-        
-        // Si el rol está en el mapa, usar su ruta
-        if (isset($roleRoutes[$role])) {
-            return $roleRoutes[$role];
-        }
-        
-        // ✅ Para cualquier otro rol no definido, ir a productos.index
-        return 'productos.index';
+
+        return $roleRoutes[$role] ?? 'productos.index';
     }
 }

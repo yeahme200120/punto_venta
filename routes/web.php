@@ -105,6 +105,8 @@ Route::middleware(['auth', 'empresa.activa'])->group(function () {
         Route::post('/', [CategoriaController::class, 'store'])->name('store')->middleware('permiso:crear_categorias');
         Route::get('/export', [CategoriaController::class, 'export'])->name('export')->middleware('permiso:ver_categorias');
         Route::get('/{categoria}', [CategoriaController::class, 'show'])->name('show')->middleware('permiso:ver_categorias');
+        Route::put('/{id}/reactivar', [CategoriaController::class, 'reactivar'])->name('reactivar')->middleware('permiso:editar_categorias');
+
         Route::get('/{categoria}/edit', [CategoriaController::class, 'edit'])->name('edit')->middleware('permiso:editar_categorias');
         Route::put('/{categoria}', [CategoriaController::class, 'update'])->name('update')->middleware('permiso:editar_categorias');
         Route::delete('/{categoria}', [CategoriaController::class, 'destroy'])->name('destroy')->middleware('permiso:eliminar_categorias');
@@ -116,11 +118,15 @@ Route::middleware(['auth', 'empresa.activa'])->group(function () {
         Route::get('/create', [UnidadMedidaController::class, 'create'])->name('create')->middleware('permiso:crear_unidades_medida');
         Route::post('/', [UnidadMedidaController::class, 'store'])->name('store')->middleware('permiso:crear_unidades_medida');
         Route::get('/export', [UnidadMedidaController::class, 'export'])->name('export')->middleware('permiso:ver_unidades_medida');
-        Route::get('/{unidad_medida}', [UnidadMedidaController::class, 'show'])->name('show')->middleware('permiso:ver_unidades_medida');
-        Route::get('/{unidad_medida}/edit', [UnidadMedidaController::class, 'edit'])->name('edit')->middleware('permiso:editar_unidades_medida');
-        Route::put('/{unidad_medida}', [UnidadMedidaController::class, 'update'])->name('update')->middleware('permiso:editar_unidades_medida');
-        Route::delete('/{unidad_medida}', [UnidadMedidaController::class, 'destroy'])->name('destroy')->middleware('permiso:eliminar_unidades_medida');
-        Route::post('/{unidad_medida}/toggle-activo', [UnidadMedidaController::class, 'toggleActivo'])->name('toggle-activo')->middleware('permiso:editar_unidades_medida');
+
+        // 🔥 Ruta reactivar debe ir ANTES de /{unidad}
+        Route::put('/{id}/reactivar', [UnidadMedidaController::class, 'reactivar'])->name('reactivar')->middleware('permiso:editar_unidades_medida');
+
+        Route::get('/{unidad}', [UnidadMedidaController::class, 'show'])->name('show')->middleware('permiso:ver_unidades_medida');
+        Route::get('/{unidad}/edit', [UnidadMedidaController::class, 'edit'])->name('edit')->middleware('permiso:editar_unidades_medida');
+        Route::put('/{unidad}', [UnidadMedidaController::class, 'update'])->name('update')->middleware('permiso:editar_unidades_medida');
+        Route::delete('/{unidad}', [UnidadMedidaController::class, 'destroy'])->name('destroy')->middleware('permiso:eliminar_unidades_medida');
+        Route::post('/{unidad}/toggle-activo', [UnidadMedidaController::class, 'toggleActivo'])->name('toggle-activo')->middleware('permiso:editar_unidades_medida');
     });
 
     // ===== PRODUCTOS =====
@@ -133,6 +139,8 @@ Route::middleware(['auth', 'empresa.activa'])->group(function () {
         Route::post('/generar-sku-por-nombre', [ProductoController::class, 'generarSkuPorNombre'])->name('generar-sku-por-nombre')->middleware('permiso:crear_productos');
         Route::get('/{producto}', [ProductoController::class, 'show'])->name('show')->middleware('permiso:ver_productos');
         Route::get('/{producto}/edit', [ProductoController::class, 'edit'])->name('edit')->middleware('permiso:editar_productos');
+         // ✅ AGREGAR ESTA RUTA
+    Route::post('/{producto}/toggle-activo', [ProductoController::class, 'toggleActivo'])->name('toggle-activo')->middleware('permiso:editar_productos');
         Route::put('/{producto}', [ProductoController::class, 'update'])->name('update')->middleware('permiso:editar_productos');
         Route::delete('/{producto}', [ProductoController::class, 'destroy'])->name('destroy')->middleware('permiso:eliminar_productos');
 
@@ -252,7 +260,10 @@ Route::middleware(['auth', 'empresa.activa'])->group(function () {
         Route::post('/movimientos', [InventarioMovimientoController::class, 'store'])->name('movimientos.store')->middleware('permiso:crear_inventario');
         Route::get('/movimientos/export', [InventarioMovimientoController::class, 'export'])->name('movimientos.export')->middleware('permiso:ver_inventario');
     });
-
+    // ====== Permisos Por Role ======
+    Route::get('/roles/{role}/permisos', [UsuarioPermisoController::class, 'getRolePermissions'])
+        ->name('roles.permisos')
+        ->middleware(['auth', 'permiso:ver_roles']);
     // ===== CAJA =====
     Route::prefix('caja')->name('cajas.')->middleware(['auth', 'empresa.activa'])->group(function () {
         // Gestión de cajas
@@ -351,6 +362,7 @@ Route::middleware(['auth', 'empresa.activa'])->group(function () {
         Route::post('/condonar', [CobranzaController::class, 'condonarAdeudo'])->name('condonar')->middleware('permiso:condonar_adeudo');
         Route::get('/historial/{id}', [CobranzaController::class, 'historialPagos'])->name('historial.pagos')->middleware('permiso:ver_historial_cobros');
         Route::get('/{id}', [CobranzaController::class, 'show'])->name('show')->middleware('permiso:ver_cobranza');
+        Route::post('/{id}/cancelar', [VentaController::class, 'cancelar'])->name('cancelar')->middleware('permiso:cancelar_ventas');
     });
 
     // ===== REPORTES GENERALES =====

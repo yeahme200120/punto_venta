@@ -23,4 +23,11 @@ class Modulo extends Model
     {
         return $this->hasMany(Menu::class, 'modulo_id');
     }
+    /**
+     * Menús principales (sin padre)
+     */
+    public function menusPrincipales()
+    {
+        return $this->hasMany(Menu::class)->whereNull('menu_padre_id')->orderBy('orden');
+    }
 }

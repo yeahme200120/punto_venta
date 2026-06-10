@@ -545,4 +545,52 @@ class VentaController extends Controller
             return back()->with('error', 'Error al cargar la venta');
         }
     }
+    /**
+     * Cancelar una venta
+     */
+    public function cancelar($id)
+    {
+        try {
+            DB::beginTransaction();
+
+            $venta = Venta::findOrFail($id);
+
+            // Verificar que no esté ya cancelada
+            if ($venta->estado === 'cancelada') {
+                return response()->json([
+                    'success' => false,
+                    'icon' => 'warning',
+                    'message' => 'La venta ya está cancelada'
+                ], 400);
+            }
+
+            // Restaurar stock de los productos
+            foreach ($venta->detalles as $detalle) {
+                $producto = $detalle->producto;
+                $producto->increment('stock', $detalle->cantidad);
+            }
+
+            // Marcar como cancelada
+            $venta->estado = 'cancelada';
+            $venta->save();
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'icon' => 'success',
+                'message' => "Venta {$venta->folio} cancelada correctamente. Stock restaurado."
+            ]);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Error al cancelar venta: ' . $e->getMessage());
+
+            return response()->json([
+                'success' => false,
+                'icon' => 'error',
+                'message' => 'Error al cancelar la venta: ' . $e->getMessage()
+            ], 500);
+        }
+    }
 }

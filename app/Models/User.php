@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Facades\Log;
 use Spatie\Permission\Traits\HasRoles;
 
 class User extends Authenticatable
@@ -66,5 +67,16 @@ class User extends Authenticatable
         $this->load('permissions', 'roles');
         app()->make(\Spatie\Permission\PermissionRegistrar::class)->forgetCachedPermissions();
         return $this;
+    }
+    /**
+     * Obtener todos los permisos del usuario (incluyendo los del rol)
+     * SOBRESCRIBIR el método del trait para agregar logs
+     */
+    public function getAllPermissions()
+    {
+        Log::info('getAllPermissions llamado para usuario: ' . $this->email);
+        $permissions = $this->getPermissionsViaRoles()->merge($this->permissions);
+        Log::info('Permisos encontrados: ' . json_encode($permissions->pluck('name')));
+        return $permissions;
     }
 }

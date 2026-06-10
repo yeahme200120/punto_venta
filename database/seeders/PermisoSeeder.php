@@ -37,7 +37,11 @@ class PermisoSeeder extends Seeder
             'respaldos',
             'insumos',
             'unidades_medida',
-            'caja'
+            'caja',
+            'productos',
+            'categorias',
+            'cotizaciones',
+            'carrito',
         ];
 
         foreach ($modulos as $modulo) {
@@ -48,33 +52,66 @@ class PermisoSeeder extends Seeder
 
         // ===== PERMISOS PARA MENÚS HIJOS =====
         $permisosHijos = [
+            // Empresas
             'ver_empresas',
             'ver_nueva_empresa',
+            
+            // Proveedores
             'ver_lista_proveedores',
             'ver_nuevo_proveedor',
+            
+            // Impresoras
             'ver_lista_impresoras',
             'ver_nueva_impresora',
+            
+            // Ticket
             'ver_general_ticket',
             'ver_diseno_ticket',
+            
+            // Inventario
             'ver_productos',
             'ver_categorias',
             'ver_movimientos',
+            'ver_insumos',
+            'ver_unidades_medida',
+            
+            // Compras
             'ver_ordenes',
             'ver_recepciones',
+            
+            // Cotizaciones
             'ver_cotizaciones',
+            
+            // Facturación
             'ver_facturas',
             'ver_timbrado',
+            
+            // Caja
             'ver_apertura_cierre',
+            'ver_arqueos',
+            
+            // Cobranza
             'ver_creditos',
             'ver_historial',
             'ver_condonaciones',
-            'ver_arqueos',
+            
+            // Notificaciones
             'ver_correo',
             'ver_whatsapp',
+            
+            // Respaldos
             'ver_generar_respaldo',
             'ver_importar',
-            'ver_insumos',
-            'ver_unidades_medida'
+            
+            // Clientes por ámbito
+            'ver_mis_clientes',
+            'ver_clientes_sucursal',
+            'ver_todos_clientes',
+            
+            // Ventas por ámbito
+            'ver_mis_ventas',
+            'ver_ventas_sucursal',
+            'ver_todas_ventas',
         ];
 
         foreach ($permisosHijos as $permiso) {
@@ -109,6 +146,7 @@ class PermisoSeeder extends Seeder
             'cancelar_ventas',
             'ver_historial_ventas',
             'imprimir_ticket_venta',
+            'reimprimir_ticket',
             'convertir_cotizacion',
             'imprimir_cotizacion',
             'cancelar_creditos',
@@ -137,6 +175,34 @@ class PermisoSeeder extends Seeder
             // Respaldos
             'generar_respaldo',
             'importar_datos',
+            'restaurar_respaldo',
+
+            // Carrito
+            'ver_carrito',
+            'agregar_carrito',
+            'editar_carrito',
+            'eliminar_carrito',
+            'limpiar_carrito',
+
+            // Dashboard
+            'exportar_dashboard',
+            'ver_graficas_dashboard',
+
+            // Productos específicos
+            'generar_codigo_barras',
+            'ver_stock_productos',
+            'actualizar_stock_productos',
+            'importar_productos',
+            'exportar_productos',
+
+            // Clientes específicos
+            'importar_clientes',
+            'exportar_clientes',
+            'ver_historial_compras_cliente',
+
+            // Reportes
+            'exportar_reportes',
+            'generar_reportes_personalizados',
         ];
 
         foreach ($permisosEspeciales as $permiso) {
@@ -150,159 +216,93 @@ class PermisoSeeder extends Seeder
         $cajero = Role::firstOrCreate(['name' => 'Cajero', 'guard_name' => 'web']);
         $cobrador = Role::firstOrCreate(['name' => 'Cobrador', 'guard_name' => 'web']);
 
-        // ===== SUPER ADMIN: TODOS =====
+        // ===== SUPER ADMIN: TODOS (sin restricciones) =====
         $superAdmin->syncPermissions(Permission::all());
 
-        // ===== ADMINISTRADOR =====
-        $admin->syncPermissions([
-            // Dashboard
-            'ver_dashboard',
-
-            // ===== INVENTARIO =====
-            'ver_inventario',
-            'ver_productos',
-            'ver_categorias',
-            'ver_movimientos',
-            'ver_insumos',
-            'crear_insumos',
-            'editar_insumos',
-            'eliminar_insumos',  // ← AGREGADO
-            'ver_unidades_medida',
-            'crear_unidades_medida',
-            'editar_unidades_medida',
-            'eliminar_unidades_medida',  // ← AGREGADO
-
-            // ===== PROVEEDORES =====
-            'ver_proveedores',
-            'crear_proveedores',
-            'editar_proveedores',
-            'ver_lista_proveedores',
-            'ver_nuevo_proveedor',
-
-            // ===== VENTAS =====
-            'ver_ventas',
-            'crear_ventas',
-            'editar_ventas',
-            'cancelar_ventas',
-            'ver_historial_ventas',
-            'imprimir_ticket_venta',
-            'ver_cotizaciones',
-            'convertir_cotizacion',
-            'imprimir_cotizacion',
-
-            // ===== CLIENTES =====
-            'ver_clientes',
-            'crear_clientes',
-            'editar_clientes',
-            'eliminar_clientes',  // ← AGREGADO
-
-            // ===== CRÉDITOS =====
-            'ver_creditos',
-            'cancelar_creditos',
-            'ver_pagares',
-            'imprimir_pagare',
-
-            // ===== CAJA =====
-            'ver_caja',
-            'crear_caja',
-            'editar_caja',
-            'eliminar_caja',
-            'abrir_caja',
-            'cerrar_caja',
-            'ver_cierres_caja',
-            'realizar_arqueo',
-            'finalizar_arqueo',
-            'ver_arqueos_historial',
-            'ver_apertura_cierre',
-            'ver_arqueos',
-            'ver_movimientos_caja',
-            'registrar_movimiento_caja',
-            'transferir_entre_cajas',
-            'autorizar_transferencia',
-            'autorizar_movimiento',
-            'ver_autorizaciones_caja',
-            'ver_transferencias_caja',
-            'solicitar_transferencia_caja',
-            'ver_reporte_caja_diario',
-            'ver_dashboard_caja',
-            'imprimir_arqueo_caja',
-            'exportar_reportes_caja',
-            'ver_configuracion_caja',
-            'ver_lista_cajas',
-
-            // ===== COBRANZA =====
-            'ver_cobranza',
-            'registrar_cobro',
-            'condonar_adeudo',
-            'ver_historial_cobros',
-            'ver_historial',
-            'ver_condonaciones',
-            'ver_historial_cobranza',
-            'cancelar_cobro',
-            'registrar_abono',
-            'pagar_pagare',
-
-            // ===== FORMAS DE PAGO =====
-            'ver_formaspago',
-            'crear_formaspago',   // ← AGREGADO
-            'editar_formaspago',
-            'eliminar_formaspago', // ← AGREGADO
-
-            // ===== USUARIOS =====
-            'ver_usuarios',
-            'crear_usuarios',
-            'editar_usuarios',
-            'eliminar_usuarios',
-
-            // ===== ROLES =====
-            'ver_roles',
-            'crear_roles',
-            'editar_roles',
-            'eliminar_roles',
-
-            // ===== REPORTES =====
-            'ver_reportes',
-
-            // ===== ADICIONALES =====
-            'ver_cotizaciones',
-        ]);
+        // ===== ADMINISTRADOR (todos excepto módulos restringidos) =====
+        $admin->syncPermissions(Permission::all()->filter(function($permiso) {
+            $excluir = ['empresas', 'licencias', 'notificaciones', 'impresoras'];
+            foreach ($excluir as $modulo) {
+                if (str_contains($permiso->name, $modulo)) {
+                    return false;
+                }
+            }
+            return true;
+        })->pluck('name')->toArray());
 
         // ===== VENDEDOR =====
         $vendedor->syncPermissions([
-            'ver_inventario',
+            // Dashboard
+            'ver_dashboard',
+            
+            // Productos
             'ver_productos',
-            'ver_insumos',
+            'ver_categorias',
             'ver_unidades_medida',
+            'ver_insumos',
+            
+            // Proveedores
             'ver_proveedores',
+            
+            // Ventas
             'ver_ventas',
             'crear_ventas',
-            'imprimir_ticket_venta',
             'ver_historial_ventas',
+            'imprimir_ticket_venta',
+            'ver_mis_ventas',
+            
+            // Cotizaciones
             'ver_cotizaciones',
+            'crear_cotizaciones',
             'convertir_cotizacion',
             'imprimir_cotizacion',
+            
+            // Clientes
             'ver_clientes',
             'crear_clientes',
-            'ver_cobranza',
+            'editar_clientes',
+            'ver_mis_clientes',
+            
+            // Créditos
             'ver_creditos',
+            'ver_pagares',
+            
+            // Carrito
+            'ver_carrito',
+            'agregar_carrito',
+            'editar_carrito',
+            'eliminar_carrito',
+            'limpiar_carrito',
         ]);
 
         // ===== CAJERO =====
         $cajero->syncPermissions([
+            // Dashboard
             'ver_dashboard',
-            'ver_inventario',
+            'ver_dashboard_caja',
+            
+            // Productos
             'ver_productos',
-            'ver_insumos',
             'ver_unidades_medida',
+            
+            // Ventas
             'ver_ventas',
             'crear_ventas',
-            'imprimir_ticket_venta',
             'ver_historial_ventas',
-            'ver_cotizaciones',
-            'ver_proveedores',
+            'imprimir_ticket_venta',
+            'ver_mis_ventas',
+            
+            // Clientes
             'ver_clientes',
             'crear_clientes',
-
+            
+            // Carrito
+            'ver_carrito',
+            'agregar_carrito',
+            'editar_carrito',
+            'eliminar_carrito',
+            'limpiar_carrito',
+            
             // Caja
             'ver_caja',
             'ver_lista_cajas',
@@ -318,9 +318,8 @@ class PermisoSeeder extends Seeder
             'ver_transferencias_caja',
             'solicitar_transferencia_caja',
             'ver_reporte_caja_diario',
-            'ver_dashboard_caja',
             'imprimir_arqueo_caja',
-
+            
             // Cobranza básica
             'ver_cobranza',
             'registrar_cobro',
@@ -330,13 +329,17 @@ class PermisoSeeder extends Seeder
 
         // ===== COBRADOR =====
         $cobrador->syncPermissions([
+            // Dashboard
+            'ver_dashboard',
+            
+            // Ventas
             'ver_ventas',
-            'ver_facturacion',
-            'ver_facturas',
+            'ver_historial_ventas',
+            
+            // Clientes
             'ver_clientes',
-            'ver_insumos',
-            'ver_proveedores',
-            'ver_unidades_medida',
+            
+            // Cobranza
             'ver_cobranza',
             'registrar_cobro',
             'ver_historial_cobros',
@@ -350,5 +353,8 @@ class PermisoSeeder extends Seeder
             'ver_pagares',
             'imprimir_pagare',
         ]);
+
+        $this->command->info('✅ Permisos creados exitosamente!');
+        $this->command->info('📋 Total de permisos: ' . Permission::count());
     }
 }

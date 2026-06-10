@@ -15,6 +15,7 @@ class Menu extends Model
         'icono',
         'ruta',
         'orden',
+        'permiso',
         'activo'
     ];
 
@@ -35,5 +36,12 @@ class Menu extends Model
     public function hijos()
     {
         return $this->hasMany(Menu::class, 'menu_padre_id');
+    }
+    /**
+     * Obtener los hijos que están activos
+     */
+    public function hijosActivos()
+    {
+        return $this->hijos()->where('activo', true);
     }
 }

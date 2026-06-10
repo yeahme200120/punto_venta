@@ -6,6 +6,7 @@ use App\Exports\ClientesExport;
 use App\Models\Cliente;
 use App\Models\Empresa;
 use App\Models\Sucursal;
+use App\Traits\ActivaTrait;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -13,17 +14,7 @@ use Maatwebsite\Excel\Facades\Excel;
 
 class ClienteController extends Controller
 {
-    private function empresaActivaId()
-    {
-        if (auth()->user()->hasRole('Super Admin')) {
-            return session('empresa_activa_id', auth()->user()->empresa_id);
-        }
-        return auth()->user()->empresa_id;
-    }
-
-    /**
-     * Listado de clientes
-     */
+    use ActivaTrait;
     public function index()
     {
         try {
@@ -44,18 +35,20 @@ class ClienteController extends Controller
         }
     }
 
-    /**
-     * Formulario de creación
-     */
     public function create()
     {
-        $empresaId = $this->empresaActivaId();
-        $sucursales = Sucursal::where('empresa_id', $empresaId)
-            ->where('activo', true)
-            ->orderBy('nombre')
-            ->get();
+        try {
+            $empresaId = $this->empresaActivaId();
+            $sucursales = Sucursal::where('empresa_id', $empresaId)
+                ->where('activo', true)
+                ->orderBy('nombre')
+                ->get();
 
-        return view('clientes.create', compact('sucursales'));
+            return view('clientes.create', compact('sucursales'));
+        } catch (\Exception $e) {
+            Log::error('Error al cargar formulario de creación: ' . $e->getMessage());
+            return redirect()->route('clientes.index')->with('error', 'Error al cargar el formulario.');
+        }
     }
 
     /**
@@ -72,17 +65,18 @@ class ClienteController extends Controller
             'tipo' => 'required|in:contado,credito',
             'limite_credito' => 'nullable|numeric|min:0',
             'dias_credito' => 'nullable|integer|min:0',
-            'sucursal_id' => 'nullable|integer',
+            'sucursal_id' => 'nullable|integer|exists:sucursales,id',
         ], [
             'nombre.required' => 'El nombre del cliente es obligatorio.',
             'correo.email' => 'Ingrese un correo electrónico válido.',
             'tipo.required' => 'Seleccione el tipo de cliente.',
             'tipo.in' => 'Tipo de cliente no válido.',
+            'sucursal_id.exists' => 'La sucursal seleccionada no existe.',
         ]);
 
         DB::beginTransaction();
         try {
-            Cliente::create([
+            $cliente = Cliente::create([
                 'empresa_id' => $this->empresaActivaId(),
                 'sucursal_id' => $validated['sucursal_id'] ?? null,
                 'nombre' => $validated['nombre'],
@@ -98,15 +92,23 @@ class ClienteController extends Controller
 
             DB::commit();
 
-            return redirect()->route('clientes.index')
-                ->with('success', 'Cliente "' . $validated['nombre'] . '" creado correctamente.');
+            return response()->json([
+                'success' => true,
+                'icon' => 'success',
+                'message' => 'Cliente "' . $cliente->nombre . '" creado correctamente.',
+                'status' => 200
+            ]);
 
         } catch (\Exception $e) {
             DB::rollBack();
             Log::error('Error al crear cliente: ' . $e->getMessage());
-            return back()
-                ->withInput()
-                ->with('error', 'Error al crear el cliente. Intente nuevamente.');
+            
+            return response()->json([
+                'success' => false,
+                'icon' => 'error',
+                'message' => 'Error al crear el cliente: ' . $e->getMessage(),
+                'status' => 500
+            ], 500);
         }
     }
 
@@ -115,8 +117,13 @@ class ClienteController extends Controller
      */
     public function show(Cliente $cliente)
     {
-        $cliente->load(['sucursal', 'empresa']);
-        return view('clientes.show', compact('cliente'));
+        try {
+            $cliente->load(['sucursal', 'empresa']);
+            return view('clientes.show', compact('cliente'));
+        } catch (\Exception $e) {
+            Log::error('Error al mostrar cliente: ' . $e->getMessage());
+            return redirect()->route('clientes.index')->with('error', 'Error al cargar los detalles del cliente.');
+        }
     }
 
     /**
@@ -124,13 +131,18 @@ class ClienteController extends Controller
      */
     public function edit(Cliente $cliente)
     {
-        $empresaId = $this->empresaActivaId();
-        $sucursales = Sucursal::where('empresa_id', $empresaId)
-            ->where('activo', true)
-            ->orderBy('nombre')
-            ->get();
+        try {
+            $empresaId = $this->empresaActivaId();
+            $sucursales = Sucursal::where('empresa_id', $empresaId)
+                ->where('activo', true)
+                ->orderBy('nombre')
+                ->get();
 
-        return view('clientes.edit', compact('cliente', 'sucursales'));
+            return view('clientes.edit', compact('cliente', 'sucursales'));
+        } catch (\Exception $e) {
+            Log::error('Error al cargar formulario de edición: ' . $e->getMessage());
+            return redirect()->route('clientes.index')->with('error', 'Error al cargar el formulario de edición.');
+        }
     }
 
     /**
@@ -147,11 +159,12 @@ class ClienteController extends Controller
             'tipo' => 'required|in:contado,credito',
             'limite_credito' => 'nullable|numeric|min:0',
             'dias_credito' => 'nullable|integer|min:0',
-            'sucursal_id' => 'nullable|integer',
+            'sucursal_id' => 'nullable|integer|exists:sucursales,id',
             'activo' => 'boolean',
         ], [
             'nombre.required' => 'El nombre del cliente es obligatorio.',
             'correo.email' => 'Ingrese un correo electrónico válido.',
+            'sucursal_id.exists' => 'La sucursal seleccionada no existe.',
         ]);
 
         DB::beginTransaction();
@@ -166,41 +179,130 @@ class ClienteController extends Controller
                 'tipo' => $validated['tipo'],
                 'limite_credito' => $validated['limite_credito'] ?? 0,
                 'dias_credito' => $validated['dias_credito'] ?? 0,
-                'activo' => $request->has('activo'),
+                'activo' => $request->has('activo') ? true : false,
             ]);
 
             DB::commit();
 
-            return redirect()->route('clientes.index')
-                ->with('success', 'Cliente "' . $cliente->nombre . '" actualizado correctamente.');
+            return response()->json([
+                'success' => true,
+                'icon' => 'success',
+                'message' => 'Cliente "' . $cliente->nombre . '" actualizado correctamente.',
+                'status' => 200
+            ]);
 
         } catch (\Exception $e) {
             DB::rollBack();
             Log::error('Error al actualizar cliente: ' . $e->getMessage());
-            return back()
-                ->withInput()
-                ->with('error', 'Error al actualizar el cliente.');
+            
+            return response()->json([
+                'success' => false,
+                'icon' => 'error',
+                'message' => 'Error al actualizar el cliente: ' . $e->getMessage(),
+                'status' => 500
+            ], 500);
         }
     }
 
     /**
-     * Eliminar cliente
+     * Desactivar cliente (cambiar activo a 0)
      */
-    public function destroy(Cliente $cliente)
+    public function destroy($id)
     {
-        DB::beginTransaction();
         try {
-            $nombre = $cliente->nombre;
-            $cliente->delete();
-            DB::commit();
+            // Verificar permisos - Solo Super Admin y Administrador
+            if (!auth()->user()->hasRole(['Super Admin', 'Administrador'])) {
+                return response()->json([
+                    'success' => false,
+                    'icon' => 'error',
+                    'message' => 'No tienes permisos para desactivar clientes',
+                    'status' => 403
+                ], 403);
+            }
 
-            return redirect()->route('clientes.index')
-                ->with('success', 'Cliente "' . $nombre . '" eliminado correctamente.');
-
+            $cliente = Cliente::findOrFail($id);
+            
+            // Verificar si ya está inactivo
+            if ($cliente->activo == 0) {
+                return response()->json([
+                    'success' => false,
+                    'icon' => 'warning',
+                    'message' => 'Este cliente ya está inactivo',
+                    'status' => 400
+                ], 400);
+            }
+            
+            // Solo desactivar, no eliminar
+            $cliente->activo = 0;
+            $cliente->save();
+            
+            return response()->json([
+                'success' => true,
+                'icon' => 'success',
+                'message' => 'Cliente "' . $cliente->nombre . '" desactivado correctamente',
+                'status' => 200
+            ]);
+            
         } catch (\Exception $e) {
-            DB::rollBack();
-            Log::error('Error al eliminar cliente: ' . $e->getMessage());
-            return back()->with('error', 'Error al eliminar el cliente.');
+            Log::error('Error al desactivar cliente: ' . $e->getMessage());
+            
+            return response()->json([
+                'success' => false,
+                'icon' => 'error',
+                'message' => 'Error al desactivar el cliente: ' . $e->getMessage(),
+                'status' => 500
+            ], 500);
+        }
+    }
+    
+    /**
+     * Reactivar cliente (cambiar activo a 1)
+     */
+    public function reactivar($id)
+    {
+        try {
+            // Verificar permisos - Solo Super Admin y Administrador
+            if (!auth()->user()->hasRole(['Super Admin', 'Administrador'])) {
+                return response()->json([
+                    'success' => false,
+                    'icon' => 'error',
+                    'message' => 'No tienes permisos para reactivar clientes',
+                    'status' => 403
+                ], 403);
+            }
+
+            $cliente = Cliente::findOrFail($id);
+            
+            // Verificar si ya está activo
+            if ($cliente->activo == 1) {
+                return response()->json([
+                    'success' => false,
+                    'icon' => 'warning',
+                    'message' => 'Este cliente ya está activo',
+                    'status' => 400
+                ], 400);
+            }
+            
+            // Reactivar cliente
+            $cliente->activo = 1;
+            $cliente->save();
+            
+            return response()->json([
+                'success' => true,
+                'icon' => 'success',
+                'message' => 'Cliente "' . $cliente->nombre . '" reactivado correctamente',
+                'status' => 200
+            ]);
+            
+        } catch (\Exception $e) {
+            Log::error('Error al reactivar cliente: ' . $e->getMessage());
+            
+            return response()->json([
+                'success' => false,
+                'icon' => 'error',
+                'message' => 'Error al reactivar el cliente: ' . $e->getMessage(),
+                'status' => 500
+            ], 500);
         }
     }
 
@@ -211,10 +313,15 @@ class ClienteController extends Controller
     {
         try {
             $empresaId = $this->empresaActivaId();
-            $empresa = \App\Models\Empresa::find($empresaId);
+            $empresa = Empresa::find($empresaId);
 
             if (!$empresa) {
-                return back()->with('error', 'No se encontró la empresa activa.');
+                return response()->json([
+                    'success' => false,
+                    'icon' => 'error',
+                    'message' => 'No se encontró la empresa activa.',
+                    'status' => 404
+                ], 404);
             }
 
             $fileName = 'clientes_' . str_replace(' ', '_', $empresa->nombre) . '_' . date('Y-m-d_His') . '.xlsx';
@@ -223,7 +330,13 @@ class ClienteController extends Controller
 
         } catch (\Exception $e) {
             Log::error('Error al exportar clientes: ' . $e->getMessage());
-            return back()->with('error', 'Error al generar el archivo Excel.');
+            
+            return response()->json([
+                'success' => false,
+                'icon' => 'error',
+                'message' => 'Error al generar el archivo Excel: ' . $e->getMessage(),
+                'status' => 500
+            ], 500);
         }
     }
 }

@@ -3,12 +3,12 @@
 @section('title', 'Permisos de ' . $usuario->name)
 @section('page-title', 'Permisos: ' . $usuario->name)
 @section('breadcrumbs')
-    <li><span class="text-gray-400">/</span></li>
-    <li><a href="{{ route('usuarios.index') }}" class="text-gray-500 hover:text-indigo-600">Usuarios</a></li>
-    <li><span class="text-gray-400">/</span></li>
-    <li><span class="font-medium text-gray-700">{{ $usuario->name }}</span></li>
-    <li><span class="text-gray-400">/</span></li>
-    <li><span class="font-medium text-gray-700">Permisos</span></li>
+<li><span class="text-gray-400">/</span></li>
+<li><a href="{{ route('usuarios.index') }}" class="text-gray-500 hover:text-indigo-600">Usuarios</a></li>
+<li><span class="text-gray-400">/</span></li>
+<li><span class="font-medium text-gray-700">{{ $usuario->name }}</span></li>
+<li><span class="text-gray-400">/</span></li>
+<li><span class="font-medium text-gray-700">Permisos</span></li>
 @endsection
 
 @section('content')
@@ -17,7 +17,8 @@
     <div class="p-5 mb-5 bg-white border shadow-sm rounded-2xl">
         <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div class="flex items-center gap-4">
-                <div class="flex items-center justify-center text-xl font-bold text-white rounded-full shadow-md w-14 h-14 bg-gradient-to-br from-indigo-600 to-cyan-500">
+                <div
+                    class="flex items-center justify-center text-xl font-bold text-white rounded-full shadow-md w-14 h-14 bg-gradient-to-br from-indigo-600 to-cyan-500">
                     {{ strtoupper(substr($usuario->name, 0, 1)) }}
                 </div>
                 <div>
@@ -36,9 +37,9 @@
                         @endif
                         <span class="flex items-center gap-1">
                             @if($usuario->activo)
-                                <span class="w-2 h-2 bg-green-500 rounded-full"></span> Activo
+                            <span class="w-2 h-2 bg-green-500 rounded-full"></span> Activo
                             @else
-                                <span class="w-2 h-2 bg-red-500 rounded-full"></span> Inactivo
+                            <span class="w-2 h-2 bg-red-500 rounded-full"></span> Inactivo
                             @endif
                         </span>
                     </div>
@@ -47,7 +48,7 @@
         </div>
     </div>
 
-    <form action="{{ route('usuarios.permisos.update', $usuario) }}" method="POST">
+    <form action="{{ route('usuarios.permisos.update', $usuario) }}" method="POST" id="permisosForm">
         @csrf
         @method('PUT')
 
@@ -66,7 +67,7 @@
                     @foreach($roles as $role)
                     <label class="flex items-center gap-3 p-2 transition rounded-lg cursor-pointer hover:bg-gray-50">
                         <input type="radio" name="roles[]" value="{{ $role->name }}"
-                            class="w-4 h-4 text-indigo-600 border-gray-300 focus:ring-2 focus:ring-indigo-500"
+                            class="w-4 h-4 text-indigo-600 border-gray-300 role-radio focus:ring-2 focus:ring-indigo-500"
                             {{ $usuario->hasRole($role->name) ? 'checked' : '' }}>
                         <span class="text-sm text-gray-700">{{ $role->name }}</span>
                     </label>
@@ -84,7 +85,8 @@
                         <div class="flex items-center gap-2">
                             <span class="text-lg">🔐</span>
                             <h3 class="font-semibold text-gray-800">Permisos adicionales</h3>
-                            <span class="px-2 py-1 text-xs text-gray-400 bg-white rounded-full shadow-sm" id="totalPermisosSpan">
+                            <span class="px-2 py-1 text-xs text-gray-400 bg-white rounded-full shadow-sm"
+                                id="totalPermisosSpan">
                                 {{ $permisosAgrupados->flatten()->count() }} permisos
                             </span>
                         </div>
@@ -104,10 +106,12 @@
                 {{-- Buscador --}}
                 <div class="p-4 bg-white border-b">
                     <div class="relative">
-                        <svg class="absolute w-4 h-4 text-gray-400 -translate-y-1/2 left-3 top-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                        <svg class="absolute w-4 h-4 text-gray-400 -translate-y-1/2 left-3 top-1/2" fill="none"
+                            stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
                         </svg>
-                        <input type="text" id="buscarPermiso" placeholder="Buscar permiso..." 
+                        <input type="text" id="buscarPermiso" placeholder="Buscar permiso..."
                             class="w-full py-2 pr-4 text-sm border rounded-lg pl-9 focus:ring-2 focus:ring-indigo-500">
                     </div>
                 </div>
@@ -115,64 +119,70 @@
                 {{-- Lista de permisos por módulo --}}
                 <div class="p-4 max-h-[500px] overflow-y-auto">
                     <div class="space-y-4">
-                        @foreach($permisosAgrupados  as $modulo => $items)
-                        <div class="overflow-hidden border modulo-card rounded-xl">
+                        @foreach($permisosAgrupados as $modulo => $items)
+                        <div class="overflow-hidden border modulo-card rounded-xl" data-modulo="{{ $modulo }}">
                             <div class="flex items-center justify-between p-3 cursor-pointer bg-gray-50 modulo-header">
                                 <div class="flex items-center gap-2">
                                     <span class="text-lg modulo-icon">
                                         @switch($modulo)
-                                            @case('Dashboard') 📊 @break
-                                            @case('Empresas') 🏢 @break
-                                            @case('Licencias') 📜 @break
-                                            @case('Inventario') 📦 @break
-                                            @case('Compras') 🛒 @break
-                                            @case('Proveedores') 🚚 @break
-                                            @case('Ventas') 💰 @break
-                                            @case('Facturacion') 🧾 @break
-                                            @case('Clientes') 👥 @break
-                                            @case('Caja') 💵 @break
-                                            @case('Cobranza') 📋 @break
-                                            @case('FormasPago') 💳 @break
-                                            @case('Notificaciones') 🔔 @break
-                                            @case('Impresoras') 🖨️ @break
-                                            @case('Ticket') 🎫 @break
-                                            @case('Usuarios') 🔐 @break
-                                            @case('Roles') 🎭 @break
-                                            @case('Reportes') 📈 @break
-                                            @case('Respaldos') 💾 @break
-                                            @case('Insumos') 📦 @break
-                                            @case('UnidadesMedida') 📏 @break
-                                            @default 📌
+                                        @case('Dashboard') 📊 @break
+                                        @case('Empresas') 🏢 @break
+                                        @case('Licencias') 📜 @break
+                                        @case('Inventario') 📦 @break
+                                        @case('Compras') 🛒 @break
+                                        @case('Proveedores') 🚚 @break
+                                        @case('Ventas') 💰 @break
+                                        @case('Facturacion') 🧾 @break
+                                        @case('Clientes') 👥 @break
+                                        @case('Caja') 💵 @break
+                                        @case('Cobranza') 📋 @break
+                                        @case('FormasPago') 💳 @break
+                                        @case('Notificaciones') 🔔 @break
+                                        @case('Impresoras') 🖨️ @break
+                                        @case('Ticket') 🎫 @break
+                                        @case('Usuarios') 🔐 @break
+                                        @case('Roles') 🎭 @break
+                                        @case('Reportes') 📈 @break
+                                        @case('Respaldos') 💾 @break
+                                        @case('Insumos') 📦 @break
+                                        @case('UnidadesMedida') 📏 @break
+                                        @default 📌
                                         @endswitch
                                     </span>
                                     <span class="text-sm font-semibold text-gray-700 uppercase">{{ $modulo }}</span>
                                 </div>
                                 <div class="flex items-center gap-3">
-                                    <label class="flex items-center gap-1 text-xs text-gray-500 cursor-pointer select-none">
-                                        <input type="checkbox" class="modulo-select-all w-3.5 h-3.5 rounded border-gray-300">
+                                    <label
+                                        class="flex items-center gap-1 text-xs text-gray-500 cursor-pointer select-none">
+                                        <input type="checkbox"
+                                            class="modulo-select-all w-3.5 h-3.5 rounded border-gray-300">
                                         <span class="ml-1">Seleccionar todos</span>
                                     </label>
-                                    <span class="text-xs text-gray-400 permisos-count">{{ $items->count() }} permisos</span>
+                                    <span class="text-xs text-gray-400 permisos-count">{{ $items->count() }}
+                                        permisos</span>
                                     <button type="button" class="text-gray-400 modulo-toggle hover:text-gray-600">
-                                        <svg class="w-4 h-4 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                                        <svg class="w-4 h-4 transition-transform" fill="none" stroke="currentColor"
+                                            viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                d="M19 9l-7 7-7-7"></path>
                                         </svg>
                                     </button>
                                 </div>
                             </div>
                             <div class="grid grid-cols-2 gap-2 p-3 modulo-content md:grid-cols-3 lg:grid-cols-4">
                                 @foreach($items as $permiso)
-                                <label class="permiso-item flex items-center gap-2 p-1.5 rounded-lg hover:bg-indigo-50 cursor-pointer transition" 
-                                       data-permiso="{{ strtolower($permiso->name) }}">
+                                <label
+                                    class="permiso-item flex items-center gap-2 p-1.5 rounded-lg hover:bg-indigo-50 cursor-pointer transition"
+                                    data-permiso="{{ strtolower($permiso->name) }}">
                                     <input type="checkbox" name="permisos[]" value="{{ $permiso->name }}"
                                         class="permiso-check w-3.5 h-3.5 text-indigo-600 rounded border-gray-300 focus:ring-2 focus:ring-indigo-500"
-                                        {{ $usuario->hasPermissionTo($permiso->name) ? 'checked' : '' }}>
+                                        {{ in_array($permiso->name, $permisosUsuario) ? 'checked' : '' }}>
                                     <span class="text-xs text-gray-600">
                                         @php
-                                            $nombrePermiso = str_replace('_', ' ', $permiso->name);
-                                            $partes = explode(' ', $nombrePermiso);
-                                            $accion = $partes[0] ?? '';
-                                            $resto = implode(' ', array_slice($partes, 1));
+                                        $nombrePermiso = str_replace('_', ' ', $permiso->name);
+                                        $partes = explode(' ', $nombrePermiso);
+                                        $accion = $partes[0] ?? '';
+                                        $resto = implode(' ', array_slice($partes, 1));
                                         @endphp
                                         <span class="font-semibold 
                                             @if($accion == 'ver') text-blue-600
@@ -196,7 +206,8 @@
                 {{-- Resumen --}}
                 <div class="flex items-center justify-between p-4 text-sm border-t bg-gray-50">
                     <span class="text-gray-500">
-                        <span id="seleccionadosCount">0</span> de <span id="totalPermisos">{{ $permisosAgrupados ->flatten()->count() }}</span> permisos seleccionados
+                        <span id="seleccionadosCount">0</span> de <span id="totalPermisos">{{ $permisosAgrupados
+                            ->flatten()->count() }}</span> permisos seleccionados
                     </span>
                 </div>
             </div>
@@ -217,17 +228,32 @@
 </div>
 
 <script>
-(function() {
+document.addEventListener('DOMContentLoaded', function() {
+    // Elementos
     const marcarTodosBtn = document.getElementById('marcarTodos');
     const desmarcarTodosBtn = document.getElementById('desmarcarTodos');
     const buscarInput = document.getElementById('buscarPermiso');
     const seleccionadosSpan = document.getElementById('seleccionadosCount');
-    const totalPermisosSpan = document.getElementById('totalPermisos');
+    const roleRadios = document.querySelectorAll('.role-radio');
 
+    // Función actualizar contador
     function actualizarContador() {
         const checks = document.querySelectorAll('input[name="permisos[]"]');
         const seleccionados = Array.from(checks).filter(cb => cb.checked).length;
         if (seleccionadosSpan) seleccionadosSpan.textContent = seleccionados;
+    }
+
+    // Función actualizar select-all por módulo
+    function actualizarSelectAllModulos() {
+        document.querySelectorAll('.modulo-card').forEach(moduloCard => {
+            const checks = moduloCard.querySelectorAll('.permiso-check');
+            const selectAll = moduloCard.querySelector('.modulo-select-all');
+            if (selectAll && checks.length) {
+                const todosChequeados = Array.from(checks).every(c => c.checked);
+                selectAll.checked = todosChequeados;
+                selectAll.indeterminate = !todosChequeados && Array.from(checks).some(c => c.checked);
+            }
+        });
     }
 
     // Marcar/Desmarcar todos
@@ -235,12 +261,14 @@
         marcarTodosBtn.addEventListener('click', () => {
             document.querySelectorAll('input[name="permisos[]"]').forEach(cb => cb.checked = true);
             actualizarContador();
+            actualizarSelectAllModulos();
         });
     }
     if (desmarcarTodosBtn) {
         desmarcarTodosBtn.addEventListener('click', () => {
             document.querySelectorAll('input[name="permisos[]"]').forEach(cb => cb.checked = false);
             actualizarContador();
+            actualizarSelectAllModulos();
         });
     }
 
@@ -251,6 +279,7 @@
             const checks = moduloCard.querySelectorAll('.permiso-check');
             checks.forEach(cb => cb.checked = this.checked);
             actualizarContador();
+            actualizarSelectAllModulos();
         });
     });
 
@@ -302,25 +331,80 @@
         });
     });
 
-    // Inicializar estados de checkboxes "Seleccionar todos"
-    document.querySelectorAll('.modulo-card').forEach(moduloCard => {
-        const checks = moduloCard.querySelectorAll('.permiso-check');
-        const selectAll = moduloCard.querySelector('.modulo-select-all');
-        if (selectAll && checks.length) {
-            const todosChequeados = Array.from(checks).every(c => c.checked);
-            selectAll.checked = todosChequeados;
-            selectAll.indeterminate = !todosChequeados && Array.from(checks).some(c => c.checked);
+    // Cargar permisos del rol seleccionado mediante Axios
+    async function cargarPermisosPorRol(roleName) {
+        if (!roleName) return;
+        
+        Swal.fire({
+            title: 'Cargando permisos...',
+            allowOutsideClick: false,
+            didOpen: () => Swal.showLoading()
+        });
+        
+        try {
+            const response = await axios.get(`/roles/${roleName}/permisos`);
+            const permisosDelRol = response.data.permisos;
+            
+            // Marcar/desmarcar los checkboxes según los permisos del rol
+            const allChecks = document.querySelectorAll('input[name="permisos[]"]');
+            allChecks.forEach(checkbox => {
+                checkbox.checked = permisosDelRol.includes(checkbox.value);
+            });
+            
+            // Actualizar contador y select-all por módulo
+            actualizarContador();
+            actualizarSelectAllModulos();
+            
+            Swal.close();
+            
+            // Opcional: mostrar notificación de éxito
+            Swal.fire({
+                icon: 'success',
+                title: 'Permisos cargados',
+                text: `Se han cargado los permisos del rol "${roleName}"`,
+                timer: 1500,
+                showConfirmButton: false
+            });
+        } catch (error) {
+            Swal.close();
+            Swal.fire({
+                icon: 'error',
+                title: 'Error',
+                text: error.response?.data?.message || 'No se pudieron cargar los permisos'
+            });
         }
-    });
+    }
 
+    // Escuchar cambios en los radios de rol
+    if (roleRadios.length) {
+        roleRadios.forEach(radio => {
+            radio.addEventListener('change', function() {
+                if (this.checked) {
+                    const roleName = this.value;
+                    cargarPermisosPorRol(roleName);
+                }
+            });
+        });
+    }
+
+    // Inicializar estados de checkboxes "Seleccionar todos" y contador
+    actualizarSelectAllModulos();
     actualizarContador();
-})();
+});
 </script>
 
 <style>
-.modulo-content.hidden { display: none; }
-.rotate-180 { transform: rotate(180deg); }
-.modulo-header { cursor: pointer; }
-.permiso-item:hover { background-color: #eef2ff; }
+    .modulo-content.hidden {
+        display: none;
+    }
+    .rotate-180 {
+        transform: rotate(180deg);
+    }
+    .modulo-header {
+        cursor: pointer;
+    }
+    .permiso-item:hover {
+        background-color: #eef2ff;
+    }
 </style>
 @endsection

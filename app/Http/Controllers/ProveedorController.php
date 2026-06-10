@@ -106,11 +106,14 @@ class ProveedorController extends Controller
     {
         try {
             $this->verificarEmpresa($proveedor);
-            $proveedor->load(['productos' => function($q) {
-                $q->limit(10);
-            }, 'insumos' => function($q) {
-                $q->limit(10);
-            }]);
+            $proveedor->load([
+                'productos' => function ($q) {
+                    $q->limit(10);
+                },
+                'insumos' => function ($q) {
+                    $q->limit(10);
+                }
+            ]);
             return view('proveedores.show', compact('proveedor'));
         } catch (\Exception $e) {
             Log::error('Error al mostrar proveedor: ' . $e->getMessage());
@@ -195,23 +198,34 @@ class ProveedorController extends Controller
         }
     }
 
-    public function toggleActivo(Proveedor $proveedor)
+    public function toggleActivo($id)
     {
-        $this->verificarEmpresa($proveedor);
-
         try {
-            $nuevoEstado = !$proveedor->activo;
-            $proveedor->update(['activo' => $nuevoEstado]);
+            $proveedor = Proveedor::findOrFail($id);
+
+            if ($proveedor->productos->count() > 0 && $proveedor->activo) {
+                return response()->json([
+                    'success' => false,
+                    'icon' => 'warning',
+                    'message' => 'No se puede desactivar porque tiene productos asociados'
+                ], 400);
+            }
+
+            $proveedor->activo = !$proveedor->activo;
+            $proveedor->save();
+
+            $mensaje = $proveedor->activo ? 'Proveedor reactivado' : 'Proveedor desactivado';
 
             return response()->json([
                 'success' => true,
-                'activo' => $nuevoEstado,
-                'message' => 'Proveedor ' . ($nuevoEstado ? 'activado' : 'desactivado') . ' correctamente'
+                'icon' => 'success',
+                'message' => $mensaje
             ]);
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Error al cambiar el estado del proveedor.'
+                'icon' => 'error',
+                'message' => 'Error: ' . $e->getMessage()
             ], 500);
         }
     }

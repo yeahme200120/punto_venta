@@ -37,21 +37,26 @@ class CheckPermission
         if (!$hasPermission) {
             Log::warning('Acceso denegado: ' . $request->path() . ' - Usuario: ' . $user->email);
             
+            // Para peticiones AJAX (Axios) -> responder JSON
             if ($request->ajax() || $request->wantsJson()) {
                 return response()->json([
                     'success' => false,
                     'icon' => 'error',
                     'title' => 'Acceso denegado',
                     'message' => 'No tienes permiso para realizar esta acción.',
+                    'status' => 403
                 ], 403);
             }
             
-            // Mensaje flash para mostrar en el layout
+            // Para peticiones normales -> redirigir con mensaje Swal
             $mensaje = '🔒 No tienes permiso para acceder a esta sección.';
-            $mensaje .= ' Permiso requerido: ' . str_replace('_', ' ', $missingPermission);
+            if ($missingPermission) {
+                $mensaje .= ' Permiso requerido: ' . str_replace('_', ' ', $missingPermission);
+            }
             
+            // ✅ Cambiar 'error' por 'swal_error' para que lo capture el componente
             return redirect()->route('dashboard')
-                ->with('error', $mensaje);
+                ->with('swal_error', $mensaje);
         }
         
         return $next($request);
