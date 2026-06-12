@@ -65,7 +65,7 @@ class ClienteController extends Controller
             'tipo' => 'required|in:contado,credito',
             'limite_credito' => 'nullable|numeric|min:0',
             'dias_credito' => 'nullable|integer|min:0',
-            'sucursal_id' => 'nullable|integer|exists:sucursales,id',
+            'sucursal_id' => 'nullable|integer|exists:sucursals,id',
         ], [
             'nombre.required' => 'El nombre del cliente es obligatorio.',
             'correo.email' => 'Ingrese un correo electrónico válido.',
@@ -159,8 +159,7 @@ class ClienteController extends Controller
             'tipo' => 'required|in:contado,credito',
             'limite_credito' => 'nullable|numeric|min:0',
             'dias_credito' => 'nullable|integer|min:0',
-            'sucursal_id' => 'nullable|integer|exists:sucursales,id',
-            'activo' => 'boolean',
+            'sucursal_id' => 'nullable|integer|exists:sucursals,id',
         ], [
             'nombre.required' => 'El nombre del cliente es obligatorio.',
             'correo.email' => 'Ingrese un correo electrónico válido.',
@@ -179,7 +178,7 @@ class ClienteController extends Controller
                 'tipo' => $validated['tipo'],
                 'limite_credito' => $validated['limite_credito'] ?? 0,
                 'dias_credito' => $validated['dias_credito'] ?? 0,
-                'activo' => $request->has('activo') ? true : false,
+                'activo' => $request->input('activo', '0') == '1' ? 1 : 0,
             ]);
 
             DB::commit();

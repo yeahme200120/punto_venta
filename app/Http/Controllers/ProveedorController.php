@@ -142,7 +142,6 @@ class ProveedorController extends Controller
             'telefono' => 'nullable|string|max:20',
             'correo' => 'nullable|email|max:255',
             'direccion' => 'nullable|string|max:500',
-            'activo' => 'boolean',
         ], [
             'nombre.required' => 'El nombre del proveedor es obligatorio.',
             'rfc.unique' => 'Este RFC ya está registrado para esta empresa.',
@@ -157,7 +156,7 @@ class ProveedorController extends Controller
                 'telefono' => $validated['telefono'] ?? null,
                 'correo' => $validated['correo'] ?? null,
                 'direccion' => $validated['direccion'] ?? null,
-                'activo' => $request->has('activo'),
+                'activo' => $request->has('activo') ? 1 : 0,
             ]);
 
             DB::commit();
@@ -177,8 +176,15 @@ class ProveedorController extends Controller
     public function destroy(Proveedor $proveedor)
     {
         $this->verificarEmpresa($proveedor);
+        $isAjax = request()->ajax() || request()->wantsJson();
 
         if ($proveedor->productos()->count() > 0 || $proveedor->insumos()->count() > 0) {
+            if ($isAjax) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No se puede eliminar porque tiene productos o insumos asociados.'
+                ], 422);
+            }
             return back()->with('error', 'No se puede eliminar porque tiene productos o insumos asociados.');
         }
 
@@ -188,45 +194,27 @@ class ProveedorController extends Controller
             $proveedor->delete();
             DB::commit();
 
+            if ($isAjax) {
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Proveedor "' . $nombre . '" eliminado correctamente.'
+                ]);
+            }
+
             return redirect()->route('proveedores.index')
                 ->with('success', 'Proveedor "' . $nombre . '" eliminado correctamente.');
 
         } catch (\Exception $e) {
             DB::rollBack();
             Log::error('Error al eliminar proveedor: ' . $e->getMessage());
-            return back()->with('error', 'Error al eliminar el proveedor.');
-        }
-    }
 
-    public function toggleActivo($id)
-    {
-        try {
-            $proveedor = Proveedor::findOrFail($id);
-
-            if ($proveedor->productos->count() > 0 && $proveedor->activo) {
+            if ($isAjax) {
                 return response()->json([
                     'success' => false,
-                    'icon' => 'warning',
-                    'message' => 'No se puede desactivar porque tiene productos asociados'
-                ], 400);
+                    'message' => 'Error al eliminar el proveedor.'
+                ], 500);
             }
-
-            $proveedor->activo = !$proveedor->activo;
-            $proveedor->save();
-
-            $mensaje = $proveedor->activo ? 'Proveedor reactivado' : 'Proveedor desactivado';
-
-            return response()->json([
-                'success' => true,
-                'icon' => 'success',
-                'message' => $mensaje
-            ]);
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'icon' => 'error',
-                'message' => 'Error: ' . $e->getMessage()
-            ], 500);
+            return back()->with('error', 'Error al eliminar el proveedor.');
         }
     }
 
@@ -249,4 +237,89 @@ class ProveedorController extends Controller
             return back()->with('error', 'Error al generar el archivo Excel.');
         }
     }
+    /**
+     * Reactivar proveedor
+     */
+    public function reactivar($id)
+    {
+        try {
+            $proveedor = Proveedor::findOrFail($id);
+            $this->verificarEmpresa($proveedor);
+
+            if (!auth()->user()->can('editar_proveedores') && !auth()->user()->hasRole('Super Admin')) {
+                return response()->json(['success' => false, 'message' => 'No tienes permisos'], 403);
+            }
+
+            $proveedor->update(['activo' => true]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Proveedor "' . $proveedor->nombre . '" reactivado correctamente'
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Error al reactivar proveedor: ' . $e->getMessage());
+            return response()->json(['success' => false, 'message' => 'Error al reactivar'], 500);
+        }
+    }
+    public function toggleActivo($id)
+    {
+        try {
+            $proveedor = Proveedor::findOrFail($id);
+
+            // ✅ Solo validar si está activo y tiene productos
+            if ($proveedor->activo && $proveedor->productos->count() > 0) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No se puede desactivar porque tiene ' . $proveedor->productos->count() . ' producto(s) asociado(s)'
+                ], 422);
+            }
+
+            $proveedor->activo = !$proveedor->activo;
+            $proveedor->save();
+
+            $mensaje = $proveedor->activo ? 'Proveedor reactivado correctamente' : 'Proveedor desactivado correctamente';
+
+            return response()->json([
+                'success' => true,
+                'message' => $mensaje
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Error: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function desactivar($id)
+    {
+        try {
+            $proveedor = Proveedor::findOrFail($id);
+            $this->verificarEmpresa($proveedor);
+
+            if (!auth()->user()->can('editar_proveedores') && !auth()->user()->hasRole('Super Admin')) {
+                return response()->json(['success' => false, 'message' => 'No tienes permisos'], 403);
+            }
+
+            // ✅ Validar productos e insumos
+            $totalAsociados = $proveedor->productos()->count() + $proveedor->insumos()->count();
+            if ($totalAsociados > 0) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No se puede desactivar porque tiene ' . $totalAsociados . ' producto(s) o insumo(s) asociado(s)'
+                ], 422);
+            }
+
+            $proveedor->update(['activo' => false]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Proveedor "' . $proveedor->nombre . '" desactivado correctamente'
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Error al desactivar proveedor: ' . $e->getMessage());
+            return response()->json(['success' => false, 'message' => 'Error al desactivar'], 500);
+        }
+    }
+
 }

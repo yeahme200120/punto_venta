@@ -18,31 +18,32 @@ class UsuarioPermisoController extends Controller
         Log::info('Usuario a editar: ' . $usuario->email . ' (ID: ' . $usuario->id . ')');
         
         $currentUser = auth()->user();
-        Log::info('Usuario actual: ' . $currentUser->email . ' (ID: ' . $currentUser->id . ')');
 
         if ($usuario->hasRole('Super Admin') && !$currentUser->hasRole('Super Admin')) {
-            Log::warning('Intento de editar Super Admin por usuario no autorizado: ' . $currentUser->email);
             abort(403, 'No tienes permiso para editar los permisos de un Super Administrador.');
         }
 
+        // Todos los permisos disponibles (filtrados por rol del usuario actual)
         $todosPermisos = Permission::all();
-        Log::info('Total permisos disponibles: ' . $todosPermisos->count());
-        
         if (!$currentUser->hasRole('Super Admin')) {
             $excluirModulos = ['empresas', 'licencias', 'notificaciones', 'impresoras'];
             $todosPermisos = $todosPermisos->filter(fn($p) => !str_contains($p->name, implode('|', $excluirModulos)));
-            Log::info('Permisos después de filtrar (no Super Admin): ' . $todosPermisos->count());
         }
 
+        // Roles disponibles (filtrados)
         $roles = Role::all();
         if (!$currentUser->hasRole('Super Admin')) {
             $roles = $roles->filter(fn($r) => $r->name !== 'Super Admin');
         }
-        Log::info('Roles disponibles: ' . $roles->pluck('name')->implode(', '));
 
-        $permisosUsuario = $usuario->getAllPermissions()->pluck('name')->toArray();
-        Log::info('Permisos actuales del usuario: ' . json_encode($permisosUsuario));
+        // Permisos DIRECTOS del usuario (los que se pueden modificar)
+        $permisosDirectos = $usuario->getDirectPermissions()->pluck('name')->toArray();
 
+        // Rol actual y sus permisos (solo lectura)
+        $rolActual = $usuario->roles->first();
+        $permisosDelRol = $rolActual ? $rolActual->permissions->pluck('name')->toArray() : [];
+
+        // Agrupar todos los permisos por módulo para mostrarlos en la UI
         $permisosAgrupados = $todosPermisos->groupBy(function ($permiso) {
             $mapa = [
                 'dashboard' => 'Dashboard',
@@ -68,16 +69,21 @@ class UsuarioPermisoController extends Controller
                 'unidades_medida' => 'UnidadesMedida',
             ];
             foreach ($mapa as $clave => $modulo) {
-                if (str_contains($permiso->name, $clave))
-                    return $modulo;
+                if (str_contains($permiso->name, $clave)) return $modulo;
             }
             return 'Otros';
         })->sortKeys();
 
-        return view('usuarios.permisos', compact('usuario', 'roles', 'permisosAgrupados', 'permisosUsuario'));
+        return view('usuarios.permisos', compact(
+            'usuario',
+            'roles',
+            'permisosAgrupados',
+            'permisosDirectos',
+            'permisosDelRol',
+            'rolActual'
+        ));
     }
 
-    // Obtener permisos de un rol (para Axios)
     public function getRolePermissions($roleName)
     {
         Log::info('=== GET ROLE PERMISSIONS ===');
@@ -108,7 +114,7 @@ class UsuarioPermisoController extends Controller
         Log::info('Datos recibidos del formulario:');
         Log::info(' - roles: ' . json_encode($request->roles));
         Log::info(' - permisos: ' . json_encode($request->permisos));
-        
+
         try {
             $currentUser = auth()->user();
             Log::info('Usuario que realiza la acción: ' . $currentUser->email . ' (ID: ' . $currentUser->id . ')');
@@ -130,9 +136,9 @@ class UsuarioPermisoController extends Controller
             }
 
             // Guardar permisos ANTES de modificar
-            $permisosAntes = $usuario->getAllPermissions()->pluck('name')->toArray();
-            Log::info('Permisos ANTES de la actualización: ' . json_encode($permisosAntes));
-            
+            $permisosAntes = $usuario->getDirectPermissions()->pluck('name')->toArray();
+            Log::info('Permisos DIRECTOS ANTES de la actualización: ' . json_encode($permisosAntes));
+
             $rolAntes = $usuario->roles->first();
             Log::info('Rol ANTES de la actualización: ' . ($rolAntes ? $rolAntes->name : 'ninguno'));
 
@@ -148,18 +154,18 @@ class UsuarioPermisoController extends Controller
                 $usuario->syncRoles([]);
             }
 
-            // Filtrar permisos asignables
-            $permisosAsignar = $request->permisos ?? [];
-            Log::info('Permisos a asignar: ' . json_encode($permisosAsignar));
-            Log::info('Cantidad de permisos a asignar: ' . count($permisosAsignar));
+            // PERMISOS DIRECTOS: solo los que vienen del formulario
+            $permisosDirectos = $request->permisos ?? [];
+            Log::info('Permisos directos a asignar: ' . json_encode($permisosDirectos));
+            Log::info('Cantidad de permisos directos a asignar: ' . count($permisosDirectos));
 
-            // ASIGNAR PERMISOS
-            $usuario->syncPermissions($permisosAsignar);
+            // ASIGNAR PERMISOS DIRECTOS (reemplaza los anteriores)
+            $usuario->syncPermissions($permisosDirectos);
             Log::info('syncPermissions ejecutado');
 
             // Verificar permisos DESPUÉS de la asignación
-            $permisosDespues = $usuario->getAllPermissions()->pluck('name')->toArray();
-            Log::info('Permisos DESPUÉS de syncPermissions (sin refrescar): ' . json_encode($permisosDespues));
+            $permisosDespues = $usuario->getDirectPermissions()->pluck('name')->toArray();
+            Log::info('Permisos DIRECTOS DESPUÉS de syncPermissions (sin refrescar): ' . json_encode($permisosDespues));
 
             // FORZAR limpieza de caché de permisos
             Log::info('Limpiando caché de permisos...');
@@ -171,9 +177,9 @@ class UsuarioPermisoController extends Controller
             $usuario->refresh();
             Log::info('Modelo refrescado');
 
-            // Verificar permisos después de limpiar caché
-            $permisosFinal = $usuario->getAllPermissions()->pluck('name')->toArray();
-            Log::info('Permisos FINALES después de limpiar caché: ' . json_encode($permisosFinal));
+            // Verificar permisos directos después de limpiar caché
+            $permisosFinal = $usuario->getDirectPermissions()->pluck('name')->toArray();
+            Log::info('Permisos DIRECTOS FINALES después de limpiar caché: ' . json_encode($permisosFinal));
 
             // Verificar rol después
             $rolDespues = $usuario->roles->first();
@@ -181,30 +187,17 @@ class UsuarioPermisoController extends Controller
 
             // Comparar cambios
             if ($permisosAntes == $permisosFinal) {
-                Log::warning('⚠️ LOS PERMISOS NO CAMBIARON! Antes: ' . json_encode($permisosAntes) . ' - Después: ' . json_encode($permisosFinal));
+                Log::warning('⚠️ LOS PERMISOS DIRECTOS NO CAMBIARON! Antes: ' . json_encode($permisosAntes) . ' - Después: ' . json_encode($permisosFinal));
             } else {
-                Log::info('✅ PERMISOS ACTUALIZADOS CORRECTAMENTE');
+                Log::info('✅ PERMISOS DIRECTOS ACTUALIZADOS CORRECTAMENTE');
                 Log::info('Permisos removidos: ' . json_encode(array_diff($permisosAntes, $permisosFinal)));
                 Log::info('Permisos agregados: ' . json_encode(array_diff($permisosFinal, $permisosAntes)));
             }
 
-            // Expulsar usuarios afectados
-            if ($rolAnterior && $rolAnterior->name !== $rolSeleccionado) {
-                Log::info('Expulsando usuarios con rol anterior: ' . $rolAnterior->name);
-                $this->expulsarUsuariosConRol($rolAnterior->name);
-            }
-            if ($rolSeleccionado) {
-                Log::info('Expulsando usuarios con nuevo rol: ' . $rolSeleccionado);
-                $this->expulsarUsuariosConRol($rolSeleccionado);
-            }
+            // ⚠️ SOLO EXPULSAR AL USUARIO EDITADO (NO A TODOS LOS DEL ROL)
+            $this->expulsarUsuario($usuario->id);
 
-            // También expulsar al usuario actual si no es el mismo
-            if (auth()->id() !== $usuario->id) {
-                Log::info('Expulsando usuario editado (no es el actual): ' . $usuario->email);
-                $this->expulsarUsuario($usuario->id);
-            }
-
-            // Recargar el usuario actual
+            // Recargar el usuario actual si es el mismo
             if (auth()->id() === $usuario->id) {
                 Log::info('El usuario actual fue modificado, cerrando sesión');
                 auth()->logout();
@@ -225,6 +218,9 @@ class UsuarioPermisoController extends Controller
         }
     }
 
+    /**
+     * Expulsar a un usuario específico (eliminar sus sesiones activas)
+     */
     private function expulsarUsuario($userId)
     {
         Log::info('Expulsando usuario ID: ' . $userId);
@@ -234,23 +230,5 @@ class UsuarioPermisoController extends Controller
         } else {
             Log::info('Driver de sesión no es database, no se puede expulsar automáticamente');
         }
-    }
-
-    private function expulsarUsuariosConRol($roleName)
-    {
-        Log::info('Expulsando usuarios con rol: ' . $roleName);
-        $users = User::role($roleName)->get();
-        Log::info('Usuarios encontrados con rol ' . $roleName . ': ' . $users->count());
-        
-        foreach ($users as $user) {
-            Log::info('Expulsando usuario: ' . $user->email . ' (ID: ' . $user->id . ')');
-            if (config('session.driver') === 'database') {
-                DB::table('sessions')->where('user_id', $user->id)->delete();
-            }
-        }
-        
-        // Limpiar caché de permisos para forzar recarga
-        Cache::forget('spatie.permission.cache');
-        Log::info('Caché de permisos limpiada después de expulsar usuarios');
     }
 }

@@ -86,7 +86,6 @@
 </head>
 
 <body class="antialiased bg-gradient-to-br from-slate-100 to-slate-200">
-    <x-preload />
     <div class="flex min-h-screen">
         @include('partials.sidebar')
         <div class="flex flex-col flex-1">
@@ -108,7 +107,7 @@
                 Swal.fire({
                     icon: 'success',
                     title: '¡Éxito!',
-                    text: '{{ session('success') }}',
+                    html: '{!! addslashes(session('success')) !!}',
                     confirmButtonColor: '#10b981',
                     timer: 3000
                 });
@@ -117,12 +116,32 @@
             @if(session('error'))
                 Swal.fire({
                     icon: 'error',
-                    title: 'Acceso denegado',
-                    html: '{{ session('error') }}',
+                    title: 'Error',
+                    html: '{!! addslashes(session('error')) !!}',
                     confirmButtonColor: '#ef4444'
                 });
             @endif
-        });
+
+            @if(session('warning'))
+                Swal.fire({
+                    icon: 'warning',
+                    title: 'Advertencia',
+                    html: '{!! addslashes(session('warning')) !!}',
+                    confirmButtonColor: '#f59e0b',
+                    timer: 3000
+                });
+            @endif
+
+            @if(session('info'))
+                Swal.fire({
+                    icon: 'info',
+                    title: 'Información',
+                    html: '{!! addslashes(session('info')) !!}',
+                    confirmButtonColor: '#3b82f6',
+                    timer: 3000
+                });
+            @endif
+    });
     </script>
 </body>
 

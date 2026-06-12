@@ -26,6 +26,7 @@ use App\Http\Controllers\UnidadMedidaController;
 use App\Http\Controllers\UsuarioController;
 use App\Http\Controllers\UsuarioPermisoController;
 use App\Http\Controllers\VentaController;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
 // ===== REDIRECCIÓN RAÍZ =====
@@ -79,6 +80,12 @@ Route::middleware(['auth', 'empresa.activa'])->group(function () {
         Route::get('/create', [ProveedorController::class, 'create'])->name('create')->middleware('permiso:crear_proveedores');
         Route::post('/', [ProveedorController::class, 'store'])->name('store')->middleware('permiso:crear_proveedores');
         Route::get('/export', [ProveedorController::class, 'export'])->name('export')->middleware('permiso:ver_proveedores');
+
+        // ✅ Rutas específicas DEBEN ir ANTES de /{proveedor}
+        Route::put('/{id}/desactivar', [ProveedorController::class, 'desactivar'])->name('desactivar')->middleware('permiso:editar_proveedores');
+        Route::put('/{id}/reactivar', [ProveedorController::class, 'reactivar'])->name('reactivar')->middleware('permiso:editar_proveedores');
+
+        // ✅ Rutas con Route Model Binding
         Route::get('/{proveedor}', [ProveedorController::class, 'show'])->name('show')->middleware('permiso:ver_proveedores');
         Route::get('/{proveedor}/edit', [ProveedorController::class, 'edit'])->name('edit')->middleware('permiso:editar_proveedores');
         Route::put('/{proveedor}', [ProveedorController::class, 'update'])->name('update')->middleware('permiso:editar_proveedores');
@@ -92,6 +99,10 @@ Route::middleware(['auth', 'empresa.activa'])->group(function () {
         Route::get('/create', [ClienteController::class, 'create'])->name('create')->middleware('permiso:crear_clientes');
         Route::post('/', [ClienteController::class, 'store'])->name('store')->middleware('permiso:crear_clientes');
         Route::get('/export', [ClienteController::class, 'export'])->name('export')->middleware('permiso:ver_clientes');
+
+        // ✅ AGREGAR RUTA REACTIVAR
+        Route::put('/{id}/reactivar', [ClienteController::class, 'reactivar'])->name('reactivar')->middleware('permiso:editar_clientes');
+
         Route::get('/{cliente}', [ClienteController::class, 'show'])->name('show')->middleware('permiso:ver_clientes');
         Route::get('/{cliente}/edit', [ClienteController::class, 'edit'])->name('edit')->middleware('permiso:editar_clientes');
         Route::put('/{cliente}', [ClienteController::class, 'update'])->name('update')->middleware('permiso:editar_clientes');
@@ -119,8 +130,11 @@ Route::middleware(['auth', 'empresa.activa'])->group(function () {
         Route::post('/', [UnidadMedidaController::class, 'store'])->name('store')->middleware('permiso:crear_unidades_medida');
         Route::get('/export', [UnidadMedidaController::class, 'export'])->name('export')->middleware('permiso:ver_unidades_medida');
 
-        // 🔥 Ruta reactivar debe ir ANTES de /{unidad}
+        // ✅ Ruta para REACTIVAR
         Route::put('/{id}/reactivar', [UnidadMedidaController::class, 'reactivar'])->name('reactivar')->middleware('permiso:editar_unidades_medida');
+
+        // ✅ Ruta para DESACTIVAR (cambia activo a 0, no elimina)
+        Route::put('/{id}/desactivar', [UnidadMedidaController::class, 'desactivar'])->name('desactivar')->middleware('permiso:eliminar_unidades_medida');
 
         Route::get('/{unidad}', [UnidadMedidaController::class, 'show'])->name('show')->middleware('permiso:ver_unidades_medida');
         Route::get('/{unidad}/edit', [UnidadMedidaController::class, 'edit'])->name('edit')->middleware('permiso:editar_unidades_medida');
@@ -139,8 +153,13 @@ Route::middleware(['auth', 'empresa.activa'])->group(function () {
         Route::post('/generar-sku-por-nombre', [ProductoController::class, 'generarSkuPorNombre'])->name('generar-sku-por-nombre')->middleware('permiso:crear_productos');
         Route::get('/{producto}', [ProductoController::class, 'show'])->name('show')->middleware('permiso:ver_productos');
         Route::get('/{producto}/edit', [ProductoController::class, 'edit'])->name('edit')->middleware('permiso:editar_productos');
-         // ✅ AGREGAR ESTA RUTA
-    Route::post('/{producto}/toggle-activo', [ProductoController::class, 'toggleActivo'])->name('toggle-activo')->middleware('permiso:editar_productos');
+
+        // ✅ RUTA REACTIVAR (debe ir ANTES de /{producto})
+        Route::put('/{id}/reactivar', [ProductoController::class, 'reactivar'])->name('reactivar')->middleware('permiso:editar_productos');
+
+        // ✅ RUTA TOGGLE-ACTIVO (debe ir ANTES de /{producto})
+        Route::post('/{producto}/toggle-activo', [ProductoController::class, 'toggleActivo'])->name('toggle-activo')->middleware('permiso:editar_productos');
+
         Route::put('/{producto}', [ProductoController::class, 'update'])->name('update')->middleware('permiso:editar_productos');
         Route::delete('/{producto}', [ProductoController::class, 'destroy'])->name('destroy')->middleware('permiso:eliminar_productos');
 
@@ -160,6 +179,10 @@ Route::middleware(['auth', 'empresa.activa'])->group(function () {
         Route::get('/create', [InsumoController::class, 'create'])->name('create')->middleware('permiso:crear_insumos');
         Route::post('/', [InsumoController::class, 'store'])->name('store')->middleware('permiso:crear_insumos');
         Route::get('/export', [InsumoController::class, 'export'])->name('export')->middleware('permiso:ver_insumos');
+
+        // ✅ AGREGAR RUTA REACTIVAR
+        Route::put('/{id}/reactivar', [InsumoController::class, 'reactivar'])->name('reactivar')->middleware('permiso:editar_insumos');
+
         Route::get('/{insumo}', [InsumoController::class, 'show'])->name('show')->middleware('permiso:ver_insumos');
         Route::get('/{insumo}/edit', [InsumoController::class, 'edit'])->name('edit')->middleware('permiso:editar_insumos');
         Route::put('/{insumo}', [InsumoController::class, 'update'])->name('update')->middleware('permiso:editar_insumos');
@@ -226,8 +249,8 @@ Route::middleware(['auth', 'empresa.activa'])->group(function () {
         Route::put('/{usuario}', [UsuarioController::class, 'update'])->name('update')->middleware('permiso:editar_usuarios');
         Route::delete('/{usuario}', [UsuarioController::class, 'destroy'])->name('destroy')->middleware('permiso:eliminar_usuarios');
         Route::put('/{usuario}/toggle-activo', [UsuarioController::class, 'toggleActivo'])->name('toggle-activo')->middleware('permiso:editar_usuarios');
-        Route::get('/{usuario}/permisos', [UsuarioPermisoController::class, 'edit'])->name('permisos.edit')->middleware('permiso:editar_usuarios');
-        Route::put('/{usuario}/permisos', [UsuarioPermisoController::class, 'update'])->name('permisos.update')->middleware('permiso:editar_usuarios');
+        Route::get('/{usuario}/permisos', [UsuarioPermisoController::class, 'edit'])->name('permisos.edit')->middleware('permiso:modificar_permisos_usuarios');
+        Route::put('/{usuario}/permisos', [UsuarioPermisoController::class, 'update'])->name('permisos.update')->middleware('permiso:modificar_permisos_usuarios');
     });
 
     // Perfil (acceso propio)
@@ -247,6 +270,13 @@ Route::middleware(['auth', 'empresa.activa'])->group(function () {
         Route::get('/create', [RoleController::class, 'create'])->name('create')->middleware('permiso:crear_roles');
         Route::post('/', [RoleController::class, 'store'])->name('store')->middleware('permiso:crear_roles');
         Route::get('/export', [RoleController::class, 'export'])->name('export')->middleware('permiso:ver_roles');
+
+        Route::get('/{role}/permisos_rol', [RoleController::class, 'editPermisos'])->name('permisos_rol.edit')->middleware('permiso:modificar_permisos_usuarios');
+        Route::put('/{role}/permisos_rol', [RoleController::class, 'updatePermisos'])->name('permisos_rol.update')->middleware('permiso:modificar_permisos_usuarios');
+
+        // Ruta para obtener permisos de un rol (para Axios)
+        Route::get('/{role}/permisos-data', [UsuarioPermisoController::class, 'getRolePermissions'])->name('permisos.data')->middleware('permiso:ver_roles');
+
         Route::get('/{role}', [RoleController::class, 'show'])->name('show')->middleware('permiso:ver_roles');
         Route::get('/{role}/edit', [RoleController::class, 'edit'])->name('edit')->middleware('permiso:editar_roles');
         Route::put('/{role}', [RoleController::class, 'update'])->name('update')->middleware('permiso:editar_roles');
@@ -326,6 +356,8 @@ Route::middleware(['auth', 'empresa.activa'])->group(function () {
         Route::post('/contado/store', [VentaController::class, 'storeContado'])->name('contado.store');
         Route::post('/credito/store', [VentaController::class, 'storeCredito'])->name('credito.store');
         Route::get('/historial', [VentaController::class, 'historial'])->name('historial');
+        // ✅ Ruta para cancelar venta (DEBE ir ANTES de /{id})
+        Route::post('/{id}/cancelar', [VentaController::class, 'cancelar'])->name('cancelar')->middleware('permiso:cancelar_ventas');
         Route::get('/{id}/ticket', [VentaController::class, 'ticket'])->name('ticket');
         Route::get('/{id}', [VentaController::class, 'show'])->name('show');
         Route::get('/credito/{creditoId}/pagares', [VentaController::class, 'imprimirPagares'])->name('pagares');
@@ -335,11 +367,16 @@ Route::middleware(['auth', 'empresa.activa'])->group(function () {
     Route::prefix('cotizaciones')->name('cotizaciones.')->middleware(['auth', 'empresa.activa'])->group(function () {
         Route::get('/', [CotizacionController::class, 'index'])->name('index');
         Route::post('/store', [CotizacionController::class, 'store'])->name('store');
+
         Route::get('/{id}/pdf', [CotizacionController::class, 'pdf'])->name('pdf');
         Route::get('/{id}/download', [CotizacionController::class, 'download'])->name('download');
         Route::get('/{id}', [CotizacionController::class, 'show'])->name('show');
         Route::delete('/{id}', [CotizacionController::class, 'destroy'])->name('destroy');
         Route::post('/{id}/cargar-carrito', [CotizacionController::class, 'cargarCarrito'])->name('cargar-carrito');
+        Route::post('/caja/seleccionar', function (Request $request) {
+            session(['caja_filtro_id' => $request->caja_apertura_id]);
+            return response()->json(['success' => true]);
+        })->name('caja.seleccionar')->middleware(['auth']);
     });
 
     // ===== CARRITO =====

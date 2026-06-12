@@ -163,7 +163,18 @@ class InsumoController extends Controller
         DB::beginTransaction();
         try {
             $stockAnterior = $insumo->stock;
-            $insumo->update($validated);
+            // ✅ Actualizar incluyendo 'activo' manualmente
+            $insumo->update([
+                'proveedor_id' => $validated['proveedor_id'] ?? null,
+                'unidad_medida_id' => $validated['unidad_medida_id'] ?? null,
+                'nombre' => $validated['nombre'],
+                'descripcion' => $validated['descripcion'] ?? null,
+                'costo_unitario' => $validated['costo_unitario'],
+                'stock' => $validated['stock'],
+                'stock_minimo' => $validated['stock_minimo'],
+                'stock_maximo' => $validated['stock_maximo'],
+                'activo' => $request->has('activo') ? 1 : 0,
+            ]);
 
             if ($validated['stock'] != $stockAnterior) {
                 $diferencia = $validated['stock'] - $stockAnterior;

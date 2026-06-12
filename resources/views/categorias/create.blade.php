@@ -33,20 +33,27 @@
                     <input type="text" name="nombre" value="{{ old('nombre') }}" required
                         placeholder="Ej: Bebidas, Lácteos, Electrónicos..."
                         class="w-full border rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 {{ $errors->has('nombre') ? 'border-red-500 bg-red-50' : 'border-gray-300' }}">
-                    @error('nombre') <p class="text-red-500 text-sm mt-1">⚠️ {{ $message }}</p> @enderror
+                    @error('nombre') <p class="text-red-500 text-sm mt-1">{{ $message }}</p> @enderror
                 </div>
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-2">Descripción</label>
                     <textarea name="descripcion" rows="3"
-                        class="w-full border border-gray-300 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500">{{ old('descripcion') }}</textarea>
+                        class="w-full border border-gray-300 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500"
+                        placeholder="Descripción opcional de la categoría...">{{ old('descripcion') }}</textarea>
                 </div>
             </div>
 
             <div class="flex justify-end gap-4 mt-8 pt-6 border-t">
-                <a href="{{ route('categorias.index') }}" class="px-6 py-3 border-2 border-slate-300 rounded-xl text-slate-600 hover:bg-slate-50 transition font-medium">Cancelar</a>
-                <button type="submit" class="px-8 py-3 bg-gradient-to-r from-indigo-600 to-cyan-500 text-white rounded-xl hover:from-indigo-700 hover:to-cyan-600 transition font-semibold shadow-lg flex items-center gap-2">
+                <a href="{{ route('categorias.index') }}" 
+                   class="px-6 py-3 border-2 border-slate-300 rounded-xl text-slate-600 hover:bg-slate-50 transition font-medium">
+                    Cancelar
+                </a>
+                @can('crear_categorias')
+                <button type="submit" 
+                    class="px-8 py-3 bg-gradient-to-r from-indigo-600 to-cyan-500 text-white rounded-xl hover:from-indigo-700 hover:to-cyan-600 transition font-semibold shadow-lg">
                     💾 Crear categoría
                 </button>
+                @endcan
             </div>
         </form>
     </div>

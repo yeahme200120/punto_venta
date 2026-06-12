@@ -33,18 +33,16 @@ class VentaController extends Controller
         $query = CajaApertura::where('sucursal_id', $sucursalId)
             ->where('estado', 'abierta');
 
-        // Vendedores y Cajeros solo pueden usar su propia caja
-        if (!$user->hasRole('Super Admin') && !$user->hasRole('Administrador')) {
+        if ($user->hasRole('Vendedor') || $user->hasRole('Cobrador')) {
+            // Pueden usar cualquier caja abierta en su sucursal
+        } elseif ($user->hasRole('Cajero')) {
             $query->where('user_id', $userId);
         }
 
         $apertura = $query->first();
 
         if (!$apertura) {
-            if ($user->hasRole('Administrador')) {
-                throw new \Exception('No hay una caja abierta en esta sucursal. Debes abrir una caja primero.');
-            }
-            throw new \Exception('No tienes una caja abierta. Debes abrir una caja primero.');
+            throw new \Exception('No hay una caja abierta. Debes abrir una caja primero.');
         }
 
         return $apertura;
@@ -55,49 +53,49 @@ class VentaController extends Controller
         try {
             $empresaId = $this->empresaActivaId();
             $sucursalId = $this->sucursalActivaId();
+            $user = auth()->user();
 
-            // Verificar empresa activa
             if (!$empresaId) {
-                return redirect()->route('dashboard')
-                    ->with('error', '⚠️ No hay una empresa activa. Contacta al administrador.');
+                return redirect()->route('dashboard')->with('error', '⚠️ No hay una empresa activa.');
             }
 
-            // Verificar sucursal activa para Super Admin
-            if (auth()->user()->hasRole('Super Admin') && !$sucursalId) {
-                return redirect()->route('dashboard')
-                    ->with('error', '⚠️ No hay una sucursal activa. Selecciona una sucursal desde el selector.');
+            if (!$user->can('crear_ventas')) {
+                return redirect()->route('dashboard')->with('error', '❌ No tienes permiso para acceder al punto de venta.');
             }
 
-            // Verificar si el usuario tiene permiso para abrir caja o realizar ventas
-            $puedeAbrirCaja = auth()->user()->can('abrir_caja');
-            $puedeVender = auth()->user()->can('crear_ventas');
-
-            if (!$puedeVender) {
-                return redirect()->route('dashboard')
-                    ->with('error', '❌ No tienes permiso para acceder al punto de venta.');
-            }
-
-            // Verificar si hay una caja abierta para este usuario/sucursal
+            $cajasActivas = collect();
             $cajaAbierta = null;
-            try {
-                $cajaAbierta = $this->getCajaAbierta();
-            } catch (\Exception $e) {
-                // No hay caja abierta
+
+            // Obtener cajas según rol
+            if ($user->hasRole('Vendedor') || $user->hasRole('Cobrador')) {
+                $cajasActivas = CajaApertura::where('sucursal_id', $sucursalId)
+                    ->where('estado', 'abierta')
+                    ->with(['caja', 'usuario'])
+                    ->get();
+            } elseif ($user->hasRole('Cajero')) {
+                $cajasActivas = CajaApertura::where('sucursal_id', $sucursalId)
+                    ->where('user_id', $user->id)
+                    ->where('estado', 'abierta')
+                    ->with(['caja', 'usuario'])
+                    ->get();
+            } else {
+                $cajasActivas = CajaApertura::where('sucursal_id', $sucursalId)
+                    ->where('estado', 'abierta')
+                    ->with(['caja', 'usuario'])
+                    ->get();
             }
 
-            // Si no hay caja abierta y el usuario puede abrir caja, redirigir a apertura
-            if (!$cajaAbierta && $puedeAbrirCaja) {
-                return redirect()->route('cajas.apertura')
-                    ->with('warning', '🔓 Debes abrir una caja antes de realizar ventas.');
+            if ($cajasActivas->isNotEmpty()) {
+                $cajaAbierta = $cajasActivas->first();
             }
 
-            // Si no hay caja abierta y el usuario NO puede abrir caja, mostrar error
-            if (!$cajaAbierta && !$puedeAbrirCaja) {
-                return redirect()->route('dashboard')
-                    ->with('error', '🔒 No hay una caja abierta. Solicita al administrador que abra una caja.');
+            if ($cajasActivas->isEmpty()) {
+                if ($user->can('abrir_caja')) {
+                    return redirect()->route('cajas.apertura')->with('warning', '🔓 Debes abrir una caja.');
+                }
+                return redirect()->route('dashboard')->with('error', '🔒 No hay caja abierta. Solicita al administrador que abra una caja.');
             }
 
-            // Obtener datos para la vista
             $productos = Producto::where('empresa_id', $empresaId)
                 ->where('activo', true)
                 ->where('stock', '>', 0)
@@ -119,11 +117,11 @@ class VentaController extends Controller
                 ->orderBy('orden')
                 ->get();
 
-            return view('ventas.index', compact('productos', 'categorias', 'clientes', 'formasPago', 'cajaAbierta'));
+            return view('ventas.index', compact('productos', 'categorias', 'clientes', 'formasPago', 'cajaAbierta', 'cajasActivas'));
 
         } catch (\Exception $e) {
             Log::error('Error al cargar punto de venta: ' . $e->getMessage());
-            return back()->with('error', 'Error al cargar el punto de venta: ' . $e->getMessage());
+            return back()->with('error', 'Error al cargar el punto de venta.');
         }
     }
 
@@ -132,10 +130,26 @@ class VentaController extends Controller
         try {
             DB::beginTransaction();
 
-            $apertura = $this->getCajaAbierta();
+            $user = auth()->user();
+
+            // Permitir seleccionar caja
+            if ($request->has('caja_apertura_id') && $request->caja_apertura_id) {
+                $apertura = CajaApertura::findOrFail($request->caja_apertura_id);
+
+                if ($apertura->estado !== 'abierta' || $apertura->sucursal_id !== $this->sucursalActivaId()) {
+                    throw new \Exception('La caja seleccionada no es válida.');
+                }
+
+                if ($user->hasRole('Cajero') && $apertura->user_id !== $user->id) {
+                    throw new \Exception('No tienes permiso para usar esta caja.');
+                }
+            } else {
+                $apertura = $this->getCajaAbierta();
+            }
+
             $items = $request->items;
             $pagos = $request->pagos;
-            $incluirIva = $request->incluir_iva ?? false; // Nuevo campo
+            $incluirIva = $request->incluir_iva ?? false;
 
             if (empty($items)) {
                 throw new \Exception('No hay productos en el carrito');
@@ -147,12 +161,11 @@ class VentaController extends Controller
 
             $totalPagos = array_sum(array_column($pagos, 'monto'));
 
-            // En storeContado, agregar logs
             Log::info('=== VENTA CONTADO ===');
+            Log::info('Caja apertura ID: ' . $apertura->id);
             Log::info('Items: ' . json_encode($items));
             Log::info('Pagos: ' . json_encode($pagos));
             Log::info('Incluir IVA: ' . ($incluirIva ? 'SI' : 'NO'));
-            Log::info('Total Pagos: ' . $totalPagos);
 
             $subtotal = 0;
             $detalles = [];
@@ -178,23 +191,20 @@ class VentaController extends Controller
                 ];
             }
 
-            Log::info('Subtotal calculado: ' . $subtotal);
             $iva = $incluirIva ? round($subtotal * 0.16, 2) : 0;
             $total = $incluirIva ? round($subtotal + $iva, 2) : round($subtotal, 2);
-            Log::info('IVA: ' . $iva);
-            Log::info('Total venta: ' . $total);
 
-            // Validar suma de pagos vs total (con tolerancia de 0.01)
+            Log::info('Subtotal: ' . $subtotal . ' | IVA: ' . $iva . ' | Total: ' . $total);
+
             if (abs($totalPagos - $total) > 0.01) {
-                throw new \Exception("La suma de los pagos ($totalPagos) no coincide con el total de la venta ($total)");
+                throw new \Exception("La suma de los pagos ($totalPagos) no coincide con el total ($total)");
             }
 
-            // Crear venta
             $venta = Venta::create([
                 'empresa_id' => $this->empresaActivaId(),
                 'sucursal_id' => $this->sucursalActivaId(),
                 'caja_apertura_id' => $apertura->id,
-                'user_id' => auth()->id(),
+                'user_id' => $user->id,
                 'cliente_id' => $request->cliente_id ?: null,
                 'folio' => Venta::generarFolio(),
                 'tipo' => 'contado',
@@ -206,12 +216,10 @@ class VentaController extends Controller
                 'fecha_venta' => now()
             ]);
 
-            // Agregar detalles de productos
             foreach ($detalles as $detalle) {
                 $venta->detalles()->create($detalle);
             }
 
-            // Registrar cada forma de pago
             foreach ($pagos as $pago) {
                 $formaPago = FormaPago::findOrFail($pago['forma_pago_id']);
 
@@ -223,7 +231,7 @@ class VentaController extends Controller
 
                 CajaMovimiento::create([
                     'caja_apertura_id' => $apertura->id,
-                    'user_id' => auth()->id(),
+                    'user_id' => $user->id,
                     'sucursal_id' => $this->sucursalActivaId(),
                     'tipo' => 'ingreso',
                     'categoria' => 'venta',
@@ -258,15 +266,28 @@ class VentaController extends Controller
         }
     }
 
-    /**
-     * Venta a crédito
-     */
     public function storeCredito(Request $request)
     {
         try {
             DB::beginTransaction();
 
-            $apertura = $this->getCajaAbierta();
+            $user = auth()->user();
+
+            // Permitir seleccionar caja
+            if ($request->has('caja_apertura_id') && $request->caja_apertura_id) {
+                $apertura = CajaApertura::findOrFail($request->caja_apertura_id);
+
+                if ($apertura->estado !== 'abierta' || $apertura->sucursal_id !== $this->sucursalActivaId()) {
+                    throw new \Exception('La caja seleccionada no es válida.');
+                }
+
+                if ($user->hasRole('Cajero') && $apertura->user_id !== $user->id) {
+                    throw new \Exception('No tienes permiso para usar esta caja.');
+                }
+            } else {
+                $apertura = $this->getCajaAbierta();
+            }
+
             $items = $request->items;
 
             if (empty($items)) {
@@ -287,8 +308,7 @@ class VentaController extends Controller
                     throw new \Exception("Stock insuficiente para {$producto->nombre}. Disponible: {$producto->stock}");
                 }
 
-                // Reducir stock
-                $producto->reducirStock($item['cantidad'], 'venta', "Venta a crédito - Folio pendiente");
+                $producto->reducirStock($item['cantidad'], 'venta', "Venta a crédito");
 
                 $precioUnitario = $producto->precio_venta;
                 $totalItem = $precioUnitario * $item['cantidad'];
@@ -305,12 +325,11 @@ class VentaController extends Controller
             $iva = $subtotal * 0.16;
             $total = $subtotal + $iva;
 
-            // Crear venta
             $venta = Venta::create([
                 'empresa_id' => $this->empresaActivaId(),
                 'sucursal_id' => $this->sucursalActivaId(),
                 'caja_apertura_id' => $apertura->id,
-                'user_id' => auth()->id(),
+                'user_id' => $user->id,
                 'cliente_id' => $request->cliente_id,
                 'folio' => Venta::generarFolio(),
                 'tipo' => 'credito',
@@ -322,20 +341,13 @@ class VentaController extends Controller
                 'fecha_venta' => now()
             ]);
 
-            // Agregar detalles
             foreach ($detalles as $detalle) {
                 $venta->detalles()->create($detalle);
             }
 
-            // Crear crédito
             $plazosDias = [
-                '7_dias' => 7,
-                '15_dias' => 15,
-                '1_mes' => 30,
-                '2_meses' => 60,
-                '3_meses' => 90,
-                '6_meses' => 180,
-                '1_ano' => 365
+                '7_dias' => 7, '15_dias' => 15, '1_mes' => 30,
+                '2_meses' => 60, '3_meses' => 90, '6_meses' => 180, '1_ano' => 365
             ];
 
             $dias = $plazosDias[$request->plazo];
@@ -347,7 +359,7 @@ class VentaController extends Controller
                 'sucursal_id' => $this->sucursalActivaId(),
                 'venta_id' => $venta->id,
                 'cliente_id' => $request->cliente_id,
-                'user_id' => auth()->id(),
+                'user_id' => $user->id,
                 'monto_total' => $total,
                 'monto_pagado' => 0,
                 'saldo_pendiente' => $total,
@@ -358,23 +370,19 @@ class VentaController extends Controller
                 'fecha_fin' => now()->addDays($dias)
             ]);
 
-            // Generar pagarés
             $intervaloDias = $dias / $numPagos;
 
             for ($i = 1; $i <= $numPagos; $i++) {
-                $fechaVencimiento = now()->addDays(round($intervaloDias * $i));
-
                 Pagare::create([
                     'credito_id' => $credito->id,
                     'folio' => Pagare::generarFolio(),
                     'numero_pago' => $i,
                     'monto' => $montoPorPago,
-                    'fecha_vencimiento' => $fechaVencimiento,
+                    'fecha_vencimiento' => now()->addDays(round($intervaloDias * $i)),
                     'estado' => 'pendiente'
                 ]);
             }
 
-            // Limpiar carrito
             $carrito = Carrito::obtenerCarrito();
             $carrito->limpiar();
 
@@ -398,9 +406,6 @@ class VentaController extends Controller
         }
     }
 
-    /**
-     * Generar ticket de venta
-     */
     public function ticket($id)
     {
         try {
@@ -430,48 +435,21 @@ class VentaController extends Controller
                 $config->copias = 1;
             }
 
-            // Construir contenido del ticket
             $contenido = '
-            <div class="row">
-                <span>Atiende:</span>
-                <span>' . $venta->usuario->name . '</span>
-            </div>
-            ' . ($venta->cliente ? '
-            <div class="row">
-                <span>Cliente:</span>
-                <span>' . $venta->cliente->nombre . '</span>
-            </div>
-            ' : '') . '
-            <div class="divider"></div>
-            ';
+            <div class="row"><span>Atiende:</span><span>' . $venta->usuario->name . '</span></div>
+            ' . ($venta->cliente ? '<div class="row"><span>Cliente:</span><span>' . $venta->cliente->nombre . '</span></div>' : '') . '
+            <div class="divider"></div>';
 
             foreach ($venta->detalles as $detalle) {
-                $contenido .= '
-                <div class="row">
-                    <span>' . $detalle->cantidad . 'x ' . $detalle->producto->nombre . '</span>
-                    <span>$' . number_format($detalle->subtotal, 2) . '</span>
-                </div>
-                ';
+                $contenido .= '<div class="row"><span>' . $detalle->cantidad . 'x ' . $detalle->producto->nombre . '</span><span>$' . number_format($detalle->subtotal, 2) . '</span></div>';
             }
 
             $contenido .= '
             <div class="divider"></div>
-            <div class="row">
-                <span>Subtotal:</span>
-                <span>$' . number_format($venta->subtotal, 2) . '</span>
-            </div>
-            <div class="row">
-                <span>IVA (16%):</span>
-                <span>$' . number_format($venta->iva, 2) . '</span>
-            </div>
-            <div class="monto neutro">
-                TOTAL: $' . number_format($venta->total, 2) . '
-            </div>
-            ' . ($venta->tipo == 'credito' ? '
-            <div class="status status-warning">
-                VENTA A CRÉDITO
-            </div>
-            ' : '');
+            <div class="row"><span>Subtotal:</span><span>$' . number_format($venta->subtotal, 2) . '</span></div>
+            <div class="row"><span>IVA (16%):</span><span>$' . number_format($venta->iva, 2) . '</span></div>
+            <div class="monto neutro">TOTAL: $' . number_format($venta->total, 2) . '</div>
+            ' . ($venta->tipo == 'credito' ? '<div class="status status-warning">VENTA A CRÉDITO</div>' : '');
 
             return view('tickets.base', [
                 'config' => $config,
@@ -486,21 +464,16 @@ class VentaController extends Controller
 
         } catch (\Exception $e) {
             Log::error('Error al generar ticket: ' . $e->getMessage());
-            return back()->with('error', 'Error al generar el ticket: ' . $e->getMessage());
+            return back()->with('error', 'Error al generar el ticket.');
         }
     }
 
-    /**
-     * Imprimir pagarés
-     */
     public function imprimirPagares($creditoId)
     {
         try {
             $credito = Credito::with(['pagares', 'cliente', 'venta'])->findOrFail($creditoId);
-
             $pdf = Pdf::loadView('ventas.pagares', compact('credito'));
             $pdf->setPaper('letter', 'portrait');
-
             return $pdf->download("Pagares_Credito_{$credito->id}.pdf");
         } catch (\Exception $e) {
             Log::error('Error al imprimir pagarés: ' . $e->getMessage());
@@ -508,14 +481,12 @@ class VentaController extends Controller
         }
     }
 
-    /**
-     * Historial de ventas
-     */
     public function historial()
     {
         try {
             $empresaId = $this->empresaActivaId();
             $sucursalId = $this->sucursalActivaId();
+            $user = auth()->user();
 
             $ventas = Venta::where('empresa_id', $empresaId)
                 ->where('sucursal_id', $sucursalId)
@@ -523,31 +494,43 @@ class VentaController extends Controller
                 ->orderBy('created_at', 'desc')
                 ->paginate(20);
 
-            return view('ventas.historial', compact('ventas'));
+            $cajasActivas = collect();
+            $cajaAbierta = null;
+
+            if ($user->hasRole('Vendedor') || $user->hasRole('Cobrador')) {
+                $cajasActivas = CajaApertura::where('sucursal_id', $sucursalId)
+                    ->where('estado', 'abierta')->with(['caja', 'usuario'])->get();
+            } elseif ($user->hasRole('Cajero')) {
+                $cajasActivas = CajaApertura::where('sucursal_id', $sucursalId)
+                    ->where('user_id', $user->id)->where('estado', 'abierta')->with(['caja', 'usuario'])->get();
+            } else {
+                $cajasActivas = CajaApertura::where('sucursal_id', $sucursalId)
+                    ->where('estado', 'abierta')->with(['caja', 'usuario'])->get();
+            }
+
+            if ($cajasActivas->isNotEmpty()) {
+                $cajaAbierta = $cajasActivas->first();
+            }
+
+            return view('ventas.historial', compact('ventas', 'cajaAbierta', 'cajasActivas'));
+
         } catch (\Exception $e) {
             Log::error('Error al cargar historial: ' . $e->getMessage());
             return back()->with('error', 'Error al cargar el historial');
         }
     }
 
-    /**
-     * Ver detalle de venta
-     */
     public function show($id)
     {
         try {
-            $venta = Venta::with(['detalles.producto', 'usuario', 'cliente', 'credito.pagares'])
-                ->findOrFail($id);
-
+            $venta = Venta::with(['detalles.producto', 'usuario', 'cliente', 'credito.pagares'])->findOrFail($id);
             return view('ventas.show', compact('venta'));
         } catch (\Exception $e) {
             Log::error('Error al ver venta: ' . $e->getMessage());
             return back()->with('error', 'Error al cargar la venta');
         }
     }
-    /**
-     * Cancelar una venta
-     */
+
     public function cancelar($id)
     {
         try {
@@ -555,40 +538,31 @@ class VentaController extends Controller
 
             $venta = Venta::findOrFail($id);
 
-            // Verificar que no esté ya cancelada
             if ($venta->estado === 'cancelada') {
                 return response()->json([
-                    'success' => false,
-                    'icon' => 'warning',
-                    'message' => 'La venta ya está cancelada'
+                    'success' => false, 'icon' => 'warning', 'message' => 'La venta ya está cancelada'
                 ], 400);
             }
 
-            // Restaurar stock de los productos
             foreach ($venta->detalles as $detalle) {
-                $producto = $detalle->producto;
-                $producto->increment('stock', $detalle->cantidad);
+                $detalle->producto->increment('stock', $detalle->cantidad);
             }
 
-            // Marcar como cancelada
             $venta->estado = 'cancelada';
             $venta->save();
 
             DB::commit();
 
             return response()->json([
-                'success' => true,
-                'icon' => 'success',
+                'success' => true, 'icon' => 'success',
                 'message' => "Venta {$venta->folio} cancelada correctamente. Stock restaurado."
             ]);
 
         } catch (\Exception $e) {
             DB::rollBack();
             Log::error('Error al cancelar venta: ' . $e->getMessage());
-
             return response()->json([
-                'success' => false,
-                'icon' => 'error',
+                'success' => false, 'icon' => 'error',
                 'message' => 'Error al cancelar la venta: ' . $e->getMessage()
             ], 500);
         }

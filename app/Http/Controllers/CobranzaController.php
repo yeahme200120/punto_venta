@@ -17,21 +17,42 @@ use Illuminate\Support\Facades\Log;
 class CobranzaController extends Controller
 {
     use ActivaTrait;
-    
-    // Los métodos empresaActivaId y sucursalActivaId ya vienen del Trait ActivaTrait
-    // NO los declares aquí
 
-    private function getCajaAbierta()
+    private function getCajaAbierta($cajaAperturaId = null)
     {
+        $user = auth()->user();
         $sucursalId = $this->sucursalActivaId();
-        $userId = auth()->id();
 
-        $apertura = CajaApertura::where('sucursal_id', $sucursalId)
-            ->where('user_id', $userId)
-            ->where('estado', 'abierta')
-            ->first();
+        // ✅ Si se especifica una caja, usarla directamente
+        if ($cajaAperturaId) {
+            $apertura = CajaApertura::where('id', $cajaAperturaId)
+                ->where('sucursal_id', $sucursalId)
+                ->where('estado', 'abierta')
+                ->first();
+            if ($apertura) {
+                return $apertura;
+            }
+        }
+
+        // ✅ Buscar cajas disponibles según rol
+        $query = CajaApertura::where('sucursal_id', $sucursalId)
+            ->where('estado', 'abierta');
+
+        // Cobrador y Vendedor: pueden usar cualquier caja abierta
+        if ($user->hasRole('Cobrador') || $user->hasRole('Vendedor')) {
+            // Sin filtro adicional
+        }
+        // Cajero: solo su propia caja
+        elseif ($user->hasRole('Cajero')) {
+            $query->where('user_id', $user->id);
+        }
+
+        $apertura = $query->first();
 
         if (!$apertura) {
+            if ($user->hasRole('Cobrador') || $user->hasRole('Vendedor')) {
+                throw new \Exception('No hay una caja abierta en esta sucursal. Solicita al administrador o cajero que abra una caja.');
+            }
             throw new \Exception('No tienes una caja abierta. Debes abrir una caja primero.');
         }
 
@@ -46,22 +67,16 @@ class CobranzaController extends Controller
 
             $creditos = Credito::where('empresa_id', $empresaId)
                 ->where('sucursal_id', $sucursalId)
-                ->with([
-                    'cliente',
-                    'venta',
-                    'pagares' => function ($q) {
-                        $q->orderBy('fecha_vencimiento');
-                    }
-                ])
+                ->with(['cliente', 'venta', 'pagares'])
                 ->orderBy('created_at', 'desc')
                 ->paginate(20);
 
-            $formasPago = FormaPago::where('empresa_id', $empresaId)
-                ->where('activo', true)
-                ->orderBy('orden')
-                ->get();
+            // ✅ Info de caja
+            $cajasActivas = CajaApertura::where('sucursal_id', $sucursalId)
+                ->where('estado', 'abierta')->with(['caja', 'usuario'])->get();
+            $cajaAbierta = $cajasActivas->first();
 
-            return view('cobranza.index', compact('creditos', 'formasPago'));
+            return view('cobranza.index', compact('creditos', 'cajaAbierta', 'cajasActivas'));
         } catch (\Exception $e) {
             Log::error('Error al cargar cobranza: ' . $e->getMessage());
             return back()->with('error', 'Error al cargar la cobranza.');
@@ -71,15 +86,17 @@ class CobranzaController extends Controller
     public function show($id)
     {
         try {
-            $credito = Credito::with(['cliente', 'venta', 'pagares', 'cobranzas.usuario'])
-                ->findOrFail($id);
+            $credito = Credito::with(['cliente', 'venta', 'pagares', 'cobranzas.usuario'])->findOrFail($id);
 
             $formasPago = FormaPago::where('empresa_id', $this->empresaActivaId())
-                ->where('activo', true)
-                ->orderBy('orden')
-                ->get();
+                ->where('activo', true)->orderBy('orden')->get();
 
-            return view('cobranza.show', compact('credito', 'formasPago'));
+            // ✅ Cajas activas
+            $cajasActivas = CajaApertura::where('sucursal_id', $this->sucursalActivaId())
+                ->where('estado', 'abierta')->with(['caja', 'usuario'])->get();
+            $cajaAbierta = $cajasActivas->first();
+
+            return view('cobranza.show', compact('credito', 'formasPago', 'cajasActivas', 'cajaAbierta'));
         } catch (\Exception $e) {
             Log::error('Error al ver crédito: ' . $e->getMessage());
             return back()->with('error', 'Error al cargar el crédito.');
@@ -88,10 +105,14 @@ class CobranzaController extends Controller
 
     public function registrarAbono(Request $request)
     {
+        $isAjax = $request->ajax() || $request->wantsJson();
+
         try {
             DB::beginTransaction();
 
-            $apertura = $this->getCajaAbierta();
+            // ✅ Usar caja seleccionada o la primera disponible
+            $cajaId = $request->caja_apertura_id ?? null;
+            $apertura = $this->getCajaAbierta($cajaId);
 
             $validated = $request->validate([
                 'credito_id' => 'required|exists:creditos,id',
@@ -111,20 +132,16 @@ class CobranzaController extends Controller
                 throw new \Exception("El monto excede el saldo pendiente. Saldo actual: $" . number_format($credito->saldo_pendiente, 2));
             }
 
+            // Distribuir el abono entre los pagarés pendientes
             $pagares = $credito->pagares()->where('estado', 'pendiente')
-                ->orderBy('fecha_vencimiento')
-                ->get();
-
+                ->orderBy('fecha_vencimiento')->get();
             $montoRestante = $validated['monto'];
 
             foreach ($pagares as $pagare) {
-                if ($montoRestante <= 0) break;
-
+                if ($montoRestante <= 0)
+                    break;
                 if ($montoRestante >= $pagare->monto) {
-                    $pagare->update([
-                        'estado' => 'pagado',
-                        'fecha_pago' => now()
-                    ]);
+                    $pagare->update(['estado' => 'pagado', 'fecha_pago' => now()]);
                     $montoRestante -= $pagare->monto;
                 } else {
                     $montoRestante = 0;
@@ -136,7 +153,6 @@ class CobranzaController extends Controller
                 'sucursal_id' => $this->sucursalActivaId(),
                 'credito_id' => $credito->id,
                 'user_id' => auth()->id(),
-                'caja_movimiento_id' => null,
                 'monto' => $validated['monto'],
                 'tipo' => 'abono',
                 'observaciones' => $validated['observaciones'],
@@ -152,6 +168,7 @@ class CobranzaController extends Controller
                 'estado' => $nuevoSaldo <= 0 ? 'pagado' : 'activo'
             ]);
 
+            // ✅ Registrar movimiento en la caja seleccionada
             $movimiento = CajaMovimiento::create([
                 'caja_apertura_id' => $apertura->id,
                 'user_id' => auth()->id(),
@@ -169,27 +186,36 @@ class CobranzaController extends Controller
 
             DB::commit();
 
-            $mensaje = "Abono registrado correctamente. Nuevo saldo: $" . number_format($nuevoSaldo, 2);
-            if ($nuevoSaldo <= 0) {
-                $mensaje = "¡Crédito liquidado! Abono registrado correctamente.";
+            $mensaje = "Abono registrado. Nuevo saldo: $" . number_format($nuevoSaldo, 2);
+            if ($nuevoSaldo <= 0)
+                $mensaje = "¡Crédito liquidado!";
+
+            if ($isAjax) {
+                return response()->json(['success' => true, 'message' => $mensaje]);
             }
 
-            return redirect()->route('cobranza.show', $credito->id)
-                ->with('success', $mensaje);
+            return redirect()->route('cobranza.show', $credito->id)->with('success', $mensaje);
 
         } catch (\Exception $e) {
             DB::rollBack();
             Log::error('Error al registrar abono: ' . $e->getMessage());
+            if ($isAjax) {
+                return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+            }
             return back()->with('error', $e->getMessage());
         }
     }
 
     public function pagarPagare(Request $request, $pagareId)
     {
+        $isAjax = $request->ajax() || $request->wantsJson();
+
         try {
             DB::beginTransaction();
 
-            $apertura = $this->getCajaAbierta();
+            // ✅ Usar caja seleccionada o la primera disponible
+            $cajaId = $request->caja_apertura_id ?? null;
+            $apertura = $this->getCajaAbierta($cajaId);
 
             $validated = $request->validate([
                 'forma_pago' => 'required|string',
@@ -210,17 +236,13 @@ class CobranzaController extends Controller
                 'credito_id' => $credito->id,
                 'pagare_id' => $pagare->id,
                 'user_id' => auth()->id(),
-                'caja_movimiento_id' => null,
                 'monto' => $pagare->monto,
                 'tipo' => 'pago_pagare',
                 'observaciones' => $validated['observaciones'],
                 'fecha_cobro' => now()
             ]);
 
-            $pagare->update([
-                'estado' => 'pagado',
-                'fecha_pago' => now()
-            ]);
+            $pagare->update(['estado' => 'pagado', 'fecha_pago' => now()]);
 
             $nuevoPagado = $credito->monto_pagado + $pagare->monto;
             $nuevoSaldo = $credito->saldo_pendiente - $pagare->monto;
@@ -231,6 +253,7 @@ class CobranzaController extends Controller
                 'estado' => $nuevoSaldo <= 0 ? 'pagado' : 'activo'
             ]);
 
+            // ✅ Registrar movimiento en la caja seleccionada
             $movimiento = CajaMovimiento::create([
                 'caja_apertura_id' => $apertura->id,
                 'user_id' => auth()->id(),
@@ -249,16 +272,21 @@ class CobranzaController extends Controller
             DB::commit();
 
             $mensaje = "Pagaré #{$pagare->folio} pagado correctamente.";
-            if ($nuevoSaldo <= 0) {
+            if ($nuevoSaldo <= 0)
                 $mensaje = "¡Crédito liquidado! " . $mensaje;
+
+            if ($isAjax) {
+                return response()->json(['success' => true, 'message' => $mensaje]);
             }
 
-            return redirect()->route('cobranza.show', $credito->id)
-                ->with('success', $mensaje);
+            return redirect()->route('cobranza.show', $credito->id)->with('success', $mensaje);
 
         } catch (\Exception $e) {
             DB::rollBack();
             Log::error('Error al pagar pagaré: ' . $e->getMessage());
+            if ($isAjax) {
+                return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+            }
             return back()->with('error', $e->getMessage());
         }
     }

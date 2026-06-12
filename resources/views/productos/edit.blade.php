@@ -280,14 +280,18 @@
 
             <div class="flex justify-between pt-6 mt-8 border-t">
                 <div class="flex gap-4">
+                    @can('activar_productos')
                     <button type="button" onclick="toggleActivo({{ $producto->id }})" 
                             class="px-6 py-3 border-2 {{ $producto->activo ? 'border-red-300 text-red-600 hover:bg-red-50' : 'border-green-300 text-green-600 hover:bg-green-50' }} rounded-xl transition font-medium">
                         {{ $producto->activo ? '🔴 Desactivar' : '🟢 Activar' }}
                     </button>
+                    @endcan
                 </div>
                 <div class="flex gap-4">
                     <a href="{{ route('productos.index') }}" class="px-6 py-3 font-medium transition border-2 border-slate-300 rounded-xl text-slate-600 hover:bg-slate-50">Cancelar</a>
+                    @can('editar_productos')
                     <button type="submit" class="px-8 py-3 font-semibold text-white transition shadow-lg bg-gradient-to-r from-indigo-600 to-cyan-500 rounded-xl hover:from-indigo-700 hover:to-cyan-600">💾 Guardar cambios</button>
+                    @endcan
                 </div>
             </div>
         </form>
@@ -308,7 +312,9 @@
     </div>
 </div>
 
+@push('scripts')
 <script>
+// Variables globales
 let cropper = null;
 let currentFileIndex = null;
 let isExistingImage = false;
@@ -317,7 +323,40 @@ let nuevasImagenes = [];
 let previewUrlsNuevas = [];
 let relacionadosCount = {{ $producto->relacionados->count() }};
 
+// Verificar permisos
+const canEditProductos = {{ auth()->user()->can('editar_productos') || auth()->user()->hasRole('Super Admin') ? 'true' : 'false' }};
+const canActivateProductos = {{ auth()->user()->can('activar_productos') || auth()->user()->hasRole('Super Admin') ? 'true' : 'false' }};
+
+// CSRF Token para Axios
+const csrfToken = '{{ csrf_token() }}';
+
+// Configurar Axios
+axios.defaults.headers.common['X-CSRF-TOKEN'] = csrfToken;
+axios.defaults.headers.common['X-Requested-With'] = 'XMLHttpRequest';
+axios.defaults.headers.common['Accept'] = 'application/json';
+
 document.addEventListener('DOMContentLoaded', function() {
+    // Verificar permisos al cargar
+    if (!canEditProductos) {
+        Swal.fire({
+            icon: 'warning',
+            title: 'Acceso restringido',
+            text: 'No tienes permisos para editar productos. Solo puedes ver la información.',
+            confirmButtonColor: '#4f46e5'
+        });
+        
+        // Deshabilitar todos los campos del formulario
+        const form = document.getElementById('productoForm');
+        if (form) {
+            const inputs = form.querySelectorAll('input, select, textarea, button[type="submit"]');
+            inputs.forEach(input => {
+                if (input.type !== 'hidden') {
+                    input.disabled = true;
+                }
+            });
+        }
+    }
+
     // Inicializar campo de imágenes existentes
     actualizarImagenesExistentes();
     
@@ -325,6 +364,15 @@ document.addEventListener('DOMContentLoaded', function() {
     const btnAgregar = document.getElementById('btn-agregar-imagen');
     if (btnAgregar) {
         btnAgregar.addEventListener('click', function() {
+            if (!canEditProductos) {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Acceso denegado',
+                    text: 'No tienes permisos para modificar este producto',
+                    confirmButtonColor: '#ef4444'
+                });
+                return;
+            }
             document.getElementById('imagen_input').click();
         });
     }
@@ -338,6 +386,15 @@ document.addEventListener('DOMContentLoaded', function() {
     // Eventos para imágenes existentes
     document.querySelectorAll('#imagenes-preview .edit-btn').forEach(btn => {
         btn.addEventListener('click', function() {
+            if (!canEditProductos) {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Acceso denegado',
+                    text: 'No tienes permisos para editar imágenes',
+                    confirmButtonColor: '#ef4444'
+                });
+                return;
+            }
             const container = this.closest('.image-container');
             const imagenUrl = container.dataset.imagenUrl;
             existingImageId = container.dataset.imagenId;
@@ -348,6 +405,15 @@ document.addEventListener('DOMContentLoaded', function() {
 
     document.querySelectorAll('#imagenes-preview .delete-btn').forEach(btn => {
         btn.addEventListener('click', function() {
+            if (!canEditProductos) {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Acceso denegado',
+                    text: 'No tienes permisos para eliminar imágenes',
+                    confirmButtonColor: '#ef4444'
+                });
+                return;
+            }
             const container = this.closest('.image-container');
             const imagenId = container.dataset.imagenId;
             eliminarImagenExistente(imagenId);
@@ -357,6 +423,10 @@ document.addEventListener('DOMContentLoaded', function() {
     // Eventos de checkboxes
     document.querySelectorAll('.insumo-check').forEach(cb => {
         cb.addEventListener('change', function() {
+            if (!canEditProductos) {
+                this.checked = !this.checked;
+                return;
+            }
             const row = this.closest('.flex');
             const cantidadInput = row.querySelector('input[type="number"]');
             if (cantidadInput) cantidadInput.disabled = !this.checked;
@@ -365,6 +435,10 @@ document.addEventListener('DOMContentLoaded', function() {
 
     document.querySelectorAll('.prov-check').forEach(cb => {
         cb.addEventListener('change', function() {
+            if (!canEditProductos) {
+                this.checked = !this.checked;
+                return;
+            }
             const row = this.closest('.flex');
             const inputs = row.querySelectorAll('input[type="number"]');
             inputs.forEach(input => input.disabled = !this.checked);
@@ -374,32 +448,66 @@ document.addEventListener('DOMContentLoaded', function() {
     // Eliminar productos relacionados
     document.querySelectorAll('.remove-relacionado-btn').forEach(btn => {
         btn.addEventListener('click', function() {
+            if (!canEditProductos) return;
             this.closest('.flex').remove();
             relacionadosCount--;
         });
     });
+
+    // Eventos del modal de Cropper
+    document.getElementById('close-cropper')?.addEventListener('click', closeCropper);
+    document.getElementById('apply-crop')?.addEventListener('click', applyCrop);
 });
 
+/**
+ * Maneja la subida de archivos de imagen
+ */
 function handleFileUpload(event) {
+    if (!canEditProductos) {
+        event.target.value = '';
+        Swal.fire({
+            icon: 'error',
+            title: 'Acceso denegado',
+            text: 'No tienes permisos para subir imágenes',
+            confirmButtonColor: '#ef4444'
+        });
+        return;
+    }
+
     const files = Array.from(event.target.files);
     const imagenesExistentes = document.querySelectorAll('#imagenes-preview .image-container').length;
     const totalImages = imagenesExistentes + nuevasImagenes.length + files.length;
 
     if (totalImages > 3) {
-        Swal.fire({ icon: 'warning', title: 'Límite excedido', text: 'Máximo 3 imágenes por producto', confirmButtonColor: '#4f46e5' });
+        Swal.fire({
+            icon: 'warning',
+            title: 'Límite excedido',
+            text: 'Máximo 3 imágenes por producto',
+            confirmButtonColor: '#4f46e5'
+        });
         event.target.value = '';
         return;
     }
 
     files.forEach((file) => {
         if (file.size > 2 * 1024 * 1024) {
-            Swal.fire({ icon: 'error', title: 'Archivo muy grande', text: `La imagen ${file.name} excede el límite de 2MB`, confirmButtonColor: '#4f46e5' });
+            Swal.fire({
+                icon: 'error',
+                title: 'Archivo muy grande',
+                text: `La imagen ${file.name} excede el límite de 2MB`,
+                confirmButtonColor: '#4f46e5'
+            });
             return;
         }
 
         const allowedTypes = ['image/jpeg', 'image/png', 'image/jpg', 'image/gif', 'image/webp'];
         if (!allowedTypes.includes(file.type)) {
-            Swal.fire({ icon: 'error', title: 'Formato no válido', text: `El archivo ${file.name} no es una imagen válida`, confirmButtonColor: '#4f46e5' });
+            Swal.fire({
+                icon: 'error',
+                title: 'Formato no válido',
+                text: `El archivo ${file.name} no es una imagen válida`,
+                confirmButtonColor: '#4f46e5'
+            });
             return;
         }
 
@@ -415,6 +523,9 @@ function handleFileUpload(event) {
     event.target.value = '';
 }
 
+/**
+ * Renderiza las previsualizaciones de nuevas imágenes
+ */
 function renderPreviewsNuevas() {
     const container = document.getElementById('nuevas-imagenes-preview');
     if (!container) return;
@@ -435,8 +546,10 @@ function renderPreviewsNuevas() {
         container.appendChild(div);
     });
 
+    // Eventos para editar nuevas imágenes
     document.querySelectorAll('.edit-nueva-btn').forEach(btn => {
         btn.addEventListener('click', function() {
+            if (!canEditProductos) return;
             const index = parseInt(this.dataset.index);
             currentFileIndex = index;
             isExistingImage = false;
@@ -444,51 +557,90 @@ function renderPreviewsNuevas() {
         });
     });
 
+    // Eventos para eliminar nuevas imágenes
     document.querySelectorAll('.delete-nueva-btn').forEach(btn => {
         btn.addEventListener('click', function() {
+            if (!canEditProductos) return;
             const index = parseInt(this.dataset.index);
             eliminarNuevaImagen(index);
         });
     });
 }
 
+/**
+ * Actualiza el input file con las imágenes actuales
+ */
 function actualizarInputFile() {
     const dataTransfer = new DataTransfer();
     nuevasImagenes.forEach(file => dataTransfer.items.add(file));
     document.getElementById('imagen_input').files = dataTransfer.files;
 }
 
+/**
+ * Elimina una imagen nueva
+ */
 function eliminarNuevaImagen(index) {
     Swal.fire({
-        title: '¿Eliminar imagen?', text: 'Esta acción no se puede deshacer', icon: 'question',
-        showCancelButton: true, confirmButtonColor: '#ef4444', cancelButtonColor: '#6b7280',
-        confirmButtonText: 'Sí, eliminar', cancelButtonText: 'Cancelar'
+        title: '¿Eliminar imagen?',
+        text: 'Esta acción no se puede deshacer',
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonColor: '#ef4444',
+        cancelButtonColor: '#6b7280',
+        confirmButtonText: 'Sí, eliminar',
+        cancelButtonText: 'Cancelar'
     }).then((result) => {
         if (result.isConfirmed) {
             nuevasImagenes.splice(index, 1);
             previewUrlsNuevas.splice(index, 1);
             renderPreviewsNuevas();
             actualizarInputFile();
+            
+            Swal.fire({
+                icon: 'success',
+                title: 'Imagen eliminada',
+                timer: 1500,
+                showConfirmButton: false
+            });
         }
     });
 }
 
+/**
+ * Elimina una imagen existente
+ */
 function eliminarImagenExistente(imagenId) {
     Swal.fire({
-        title: '¿Eliminar imagen?', text: 'Esta acción no se puede deshacer', icon: 'question',
-        showCancelButton: true, confirmButtonColor: '#ef4444', cancelButtonColor: '#6b7280',
-        confirmButtonText: 'Sí, eliminar', cancelButtonText: 'Cancelar'
+        title: '¿Eliminar imagen?',
+        text: 'Esta acción no se puede deshacer',
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonColor: '#ef4444',
+        cancelButtonColor: '#6b7280',
+        confirmButtonText: 'Sí, eliminar',
+        cancelButtonText: 'Cancelar'
     }).then((result) => {
         if (result.isConfirmed) {
             const container = document.querySelector(`#imagenes-preview .image-container[data-imagen-id="${imagenId}"]`);
             if (container) {
                 container.remove();
                 actualizarImagenesExistentes();
+                
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Imagen eliminada',
+                    text: 'Los cambios se guardarán al actualizar el producto',
+                    timer: 2000,
+                    showConfirmButton: false
+                });
             }
         }
     });
 }
 
+/**
+ * Actualiza el campo oculto con los IDs de imágenes existentes
+ */
 function actualizarImagenesExistentes() {
     const containers = document.querySelectorAll('#imagenes-preview .image-container');
     const ids = Array.from(containers).map(container => container.dataset.imagenId).filter(id => id);
@@ -498,6 +650,9 @@ function actualizarImagenesExistentes() {
     }
 }
 
+/**
+ * Abre el modal de Cropper para recortar imagen
+ */
 function openCropper(imageUrl) {
     const modal = document.getElementById('cropper-modal');
     const image = document.getElementById('crop-image');
@@ -519,6 +674,9 @@ function openCropper(imageUrl) {
     }, 100);
 }
 
+/**
+ * Cierra el modal de Cropper
+ */
 function closeCropper() {
     const modal = document.getElementById('cropper-modal');
     modal.classList.add('hidden');
@@ -529,40 +687,86 @@ function closeCropper() {
     }
 }
 
+/**
+ * Aplica el recorte de la imagen
+ */
 function applyCrop() {
-    if (cropper) {
-        const canvas = cropper.getCroppedCanvas({ width: 200, height: 200 });
-        canvas.toBlob((blob) => {
-            if (isExistingImage) {
-                Swal.fire({ icon: 'success', title: 'Imagen actualizada', text: 'Los cambios se aplicarán al guardar el producto', confirmButtonColor: '#4f46e5' });
-                closeCropper();
-            } else if (currentFileIndex !== null) {
-                const newFile = new File([blob], `imagen_${Date.now()}.png`, { type: 'image/png' });
-                const newPreviewUrl = URL.createObjectURL(blob);
-                nuevasImagenes[currentFileIndex] = newFile;
-                previewUrlsNuevas[currentFileIndex] = newPreviewUrl;
-                renderPreviewsNuevas();
-                actualizarInputFile();
-                closeCropper();
-            }
-        }, 'image/png');
-    }
+    if (!cropper) return;
+    
+    const canvas = cropper.getCroppedCanvas({ width: 200, height: 200 });
+    canvas.toBlob((blob) => {
+        if (isExistingImage) {
+            Swal.fire({
+                icon: 'success',
+                title: 'Imagen actualizada',
+                text: 'Los cambios se aplicarán al guardar el producto',
+                confirmButtonColor: '#4f46e5'
+            });
+            closeCropper();
+        } else if (currentFileIndex !== null) {
+            const newFile = new File([blob], `imagen_${Date.now()}.png`, { type: 'image/png' });
+            const newPreviewUrl = URL.createObjectURL(blob);
+            nuevasImagenes[currentFileIndex] = newFile;
+            previewUrlsNuevas[currentFileIndex] = newPreviewUrl;
+            renderPreviewsNuevas();
+            actualizarInputFile();
+            closeCropper();
+            
+            Swal.fire({
+                icon: 'success',
+                title: 'Imagen recortada',
+                timer: 1500,
+                showConfirmButton: false
+            });
+        }
+    }, 'image/png');
 }
 
+/**
+ * Regenera el código de barras
+ */
 function regenerarCodigoBarras() {
     const random = Math.floor(Math.random() * 10000000000000);
     const nuevoCodigo = random.toString().padStart(13, '0').substring(0, 13);
     document.querySelector('input[name="codigo_barras"]').value = nuevoCodigo;
     document.getElementById('codigo-barras-preview').innerText = nuevoCodigo;
+    
+    Swal.fire({
+        icon: 'info',
+        title: 'Código regenerado',
+        text: `Nuevo código: ${nuevoCodigo}`,
+        timer: 2000,
+        showConfirmButton: false
+    });
 }
 
+/**
+ * Agrega un producto relacionado
+ */
 function agregarRelacionado() {
-    if (relacionadosCount >= 3) {
-        Swal.fire({ icon: 'warning', title: 'Límite alcanzado', text: 'Máximo 3 productos relacionados por producto', confirmButtonColor: '#4f46e5' });
+    if (!canEditProductos) {
+        Swal.fire({
+            icon: 'error',
+            title: 'Acceso denegado',
+            text: 'No tienes permisos para modificar este producto',
+            confirmButtonColor: '#ef4444'
+        });
         return;
     }
+    
+    if (relacionadosCount >= 3) {
+        Swal.fire({
+            icon: 'warning',
+            title: 'Límite alcanzado',
+            text: 'Máximo 3 productos relacionados por producto',
+            confirmButtonColor: '#4f46e5'
+        });
+        return;
+    }
+    
     const container = document.getElementById('relacionados-container');
     if (!container) return;
+    
     const newDiv = document.createElement('div');
     newDiv.className = 'flex items-center gap-2';
     newDiv.innerHTML = `
@@ -583,17 +787,104 @@ function agregarRelacionado() {
     });
 }
 
-function toggleActivo(productoId) {
-    fetch(`/productos/${productoId}/toggle-activo`, {
-        method: 'POST',
-        headers: { 'X-CSRF-TOKEN': '{{ csrf_token() }}', 'Content-Type': 'application/json' }
-    }).then(response => response.json()).then(data => {
-        if (data.success) location.reload();
-        else Swal.fire({ icon: 'error', title: 'Error', text: 'Error al cambiar estado', confirmButtonColor: '#4f46e5' });
-    });
-}
+/**
+ * Activa/Desactiva un producto usando Axios
+ */
+async function toggleActivo(productoId) {
+    // Verificar permisos
+    if (!canActivateProductos) {
+        Swal.fire({
+            icon: 'error',
+            title: 'Acceso denegado',
+            text: 'No tienes permisos para activar/desactivar productos',
+            confirmButtonColor: '#ef4444'
+        });
+        return;
+    }
 
-document.getElementById('close-cropper')?.addEventListener('click', closeCropper);
-document.getElementById('apply-crop')?.addEventListener('click', applyCrop);
+    // Confirmar acción
+    const { isConfirmed } = await Swal.fire({
+        title: '¿Estás seguro?',
+        text: '¿Deseas cambiar el estado de este producto?',
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonColor: '#4f46e5',
+        cancelButtonColor: '#6b7280',
+        confirmButtonText: 'Sí, cambiar estado',
+        cancelButtonText: 'Cancelar'
+    });
+
+    if (!isConfirmed) return;
+
+    // Mostrar loading
+    Swal.fire({
+        title: 'Procesando...',
+        text: 'Cambiando estado del producto',
+        allowOutsideClick: false,
+        allowEscapeKey: false,
+        showConfirmButton: false,
+        didOpen: () => {
+            Swal.showLoading();
+        }
+    });
+
+    try {
+        // Usar Axios para la petición AJAX
+        const response = await axios.post(`/productos/${productoId}/toggle-activo`, {}, {
+            headers: {
+                'X-CSRF-TOKEN': csrfToken,
+                'Accept': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        });
+
+        // Verificar respuesta
+        if (response.data && response.data.success) {
+            await Swal.fire({
+                icon: 'success',
+                title: '¡Éxito!',
+                text: response.data.message || 'Estado del producto actualizado correctamente',
+                confirmButtonColor: '#10b981',
+                timer: 2000
+            });
+            
+            // Recargar la página para reflejar cambios
+            location.reload();
+        } else {
+            throw new Error(response.data.message || 'Error desconocido');
+        }
+    } catch (error) {
+        console.error('Error al cambiar estado:', error);
+        
+        let errorMessage = 'Ocurrió un error al cambiar el estado del producto';
+        
+        if (error.response) {
+            // Error de servidor con respuesta
+            if (error.response.status === 401) {
+                errorMessage = 'No tienes autorización para realizar esta acción';
+            } else if (error.response.status === 403) {
+                errorMessage = 'Acceso denegado. Verifica tus permisos.';
+            } else if (error.response.data && error.response.data.message) {
+                errorMessage = error.response.data.message;
+            } else if (error.response.status === 500) {
+                errorMessage = 'Error interno del servidor. Contacta al administrador.';
+            }
+        } else if (error.request) {
+            // Error de red
+            errorMessage = 'Error de conexión. Verifica tu conexión a internet.';
+        } else if (error.message) {
+            errorMessage = error.message;
+        }
+
+        await Swal.fire({
+            icon: 'error',
+            title: 'Error',
+            text: errorMessage,
+            confirmButtonColor: '#ef4444',
+            confirmButtonText: 'Entendido'
+        });
+    }
+}
 </script>
+@endpush
 @endsection

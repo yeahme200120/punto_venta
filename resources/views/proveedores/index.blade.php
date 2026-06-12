@@ -3,15 +3,14 @@
 @section('title', 'Proveedores')
 @section('page-title', 'Proveedores')
 @section('breadcrumbs')
-    <li>
-        <span class="text-gray-400">/</span>
-    </li>
-    <li>
-        <span class="font-medium text-gray-700">Proveedores</span>
-    </li>
+    <li><span class="text-gray-400">/</span></li>
+    <li><span class="font-medium text-gray-700">Proveedores</span></li>
 @endsection
 
 @section('content')
+
+<x-alert type="success" :message="session('success')" />
+<x-alert type="error" :message="session('error')" />
 
 <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
     <div class="flex items-center gap-2">
@@ -30,13 +29,12 @@
             </svg>
         </form>
         
-        {{-- Exportar Excel: Solo Super Admin y Administrador --}}
-        @if(auth()->user()->hasRole(['Super Admin', 'Administrador']))
+        @can('ver_proveedores')
         <a href="{{ route('proveedores.export') }}" 
             class="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white transition bg-green-600 shadow rounded-xl hover:bg-green-700">
             📥 Exportar Excel
         </a>
-        @endif
+        @endcan
     </div>
 </div>
 
@@ -47,13 +45,12 @@
             <p class="mt-1 text-sm text-gray-500">Administra los proveedores de la empresa</p>
         </div>
         
-        {{-- Crear proveedor: Solo Super Admin y Administrador --}}
-        @if(auth()->user()->hasRole(['Super Admin', 'Administrador']))
+        @can('crear_proveedores')
         <a href="{{ route('proveedores.create') }}"
             class="px-4 py-2 text-sm font-medium text-white transition shadow bg-gradient-to-r from-indigo-600 to-cyan-500 rounded-xl hover:from-indigo-700 hover:to-cyan-600">
             + Nuevo proveedor
         </a>
-        @endif
+        @endcan
     </div>
 
     <div class="overflow-x-auto">
@@ -65,17 +62,23 @@
                     <th class="px-6 py-3 text-xs font-medium text-left text-gray-500 uppercase">Teléfono</th>
                     <th class="px-6 py-3 text-xs font-medium text-left text-gray-500 uppercase">Correo</th>
                     <th class="px-6 py-3 text-xs font-medium text-center text-gray-500 uppercase">Productos</th>
+                    <th class="px-6 py-3 text-xs font-medium text-center text-gray-500 uppercase">Insumos</th>
                     <th class="px-6 py-3 text-xs font-medium text-center text-gray-500 uppercase">Estado</th>
                     <th class="px-6 py-3 text-xs font-medium text-right text-gray-500 uppercase">Acciones</th>
                 </tr>
             </thead>
             <tbody class="divide-y divide-gray-200">
                 @forelse($proveedores as $proveedor)
-                <tr id="proveedor-row-{{ $proveedor->id }}" class="transition hover:bg-gray-50">
+                @php 
+                    $prodCount = $proveedor->productos->count();
+                    $insumoCount = $proveedor->insumos->count();
+                    $totalAsociados = $prodCount + $insumoCount;
+                @endphp
+                <tr class="transition hover:bg-gray-50">
                     <td class="px-6 py-4">
                         <div class="flex items-center gap-3">
                             <div class="flex items-center justify-center w-10 h-10 text-sm font-bold text-white rounded-full shadow bg-gradient-to-br from-amber-500 to-orange-500">
-                                {{ $proveedor->iniciales }}
+                                {{ strtoupper(substr($proveedor->nombre, 0, 2)) }}
                             </div>
                             <div>
                                 <span class="font-medium text-slate-800">{{ $proveedor->nombre }}</span>
@@ -85,252 +88,152 @@
                             </div>
                         </div>
                     </td>
-                    <td class="px-6 py-4">
-                        <span class="font-mono text-sm">{{ $proveedor->rfc ?? '—' }}</span>
-                    </td>
+                    <td class="px-6 py-4"><span class="font-mono text-sm">{{ $proveedor->rfc ?? '—' }}</span></td>
                     <td class="px-6 py-4 text-sm">{{ $proveedor->telefono ?? '—' }}</td>
                     <td class="px-6 py-4 text-sm">{{ $proveedor->correo ?? '—' }}</td>
                     <td class="px-6 py-4 text-center">
-                        <span id="productos-count-{{ $proveedor->id }}" class="px-2 py-1 text-xs rounded-full {{ $proveedor->productos->count() > 0 ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500' }}">
-                            {{ $proveedor->productos->count() }}
+                        <span class="px-2 py-1 text-xs rounded-full {{ $prodCount > 0 ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500' }}">
+                            {{ $prodCount }}
                         </span>
                     </td>
                     <td class="px-6 py-4 text-center">
-                        <span id="estado-{{ $proveedor->id }}" class="text-sm {{ $proveedor->activo ? 'text-green-600' : 'text-red-600' }}">
+                        <span class="px-2 py-1 text-xs rounded-full {{ $insumoCount > 0 ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-500' }}">
+                            {{ $insumoCount }}
+                        </span>
+                    </td>
+                    <td class="px-6 py-4 text-center">
+                        <span class="text-sm {{ $proveedor->activo ? 'text-green-600' : 'text-red-600' }}">
                             {{ $proveedor->activo ? '● Activo' : '● Inactivo' }}
                         </span>
                     </td>
                     <td class="px-6 py-4">
                         <div class="flex items-center justify-end gap-2">
-                            {{-- Ver detalle: Todos los roles --}}
+                            @can('ver_proveedores')
                             <a href="{{ route('proveedores.show', $proveedor) }}" class="p-2 text-gray-400 transition hover:text-indigo-600" title="Ver">👁️</a>
+                            @endcan
                             
-                            {{-- Editar: Solo Super Admin y Administrador --}}
-                            @if(auth()->user()->hasRole(['Super Admin', 'Administrador']))
+                            @can('editar_proveedores')
                             <a href="{{ route('proveedores.edit', $proveedor) }}" class="p-2 text-gray-400 transition hover:text-amber-600" title="Editar">✏️</a>
-                            @endif
+                            @endcan
                             
-                            {{-- Toggle Activo/Inactivo: Solo Super Admin y Administrador --}}
-                            @if(auth()->user()->hasRole(['Super Admin', 'Administrador']))
+                            {{-- Toggle --}}
+                            @can('editar_proveedores')
                                 @if($proveedor->activo)
-                                <button type="button"
-                                    class="p-2 text-gray-400 transition btn-desactivar hover:text-red-600"
-                                    data-id="{{ $proveedor->id }}"
-                                    data-nombre="{{ $proveedor->nombre }}"
-                                    data-productos="{{ $proveedor->productos->count() }}"
-                                    title="Desactivar">
-                                    🔴
-                                </button>
+                                    @if($totalAsociados == 0)
+                                    <button type="button" class="p-2 text-gray-400 transition btn-desactivar hover:text-red-600"
+                                        data-id="{{ $proveedor->id }}" data-nombre="{{ $proveedor->nombre }}" title="Desactivar">🔴</button>
+                                    @else
+                                    <span class="p-2 text-gray-300 cursor-not-allowed" 
+                                          title="Tiene {{ $prodCount }} producto(s) y {{ $insumoCount }} insumo(s). No se puede desactivar.">🔒</span>
+                                    @endif
                                 @else
-                                <button type="button"
-                                    class="p-2 text-gray-400 transition btn-reactivar hover:text-green-600"
-                                    data-id="{{ $proveedor->id }}"
-                                    data-nombre="{{ $proveedor->nombre }}"
-                                    title="Reactivar">
-                                    🟢
-                                </button>
+                                <button type="button" class="p-2 text-gray-400 transition btn-reactivar hover:text-green-600"
+                                    data-id="{{ $proveedor->id }}" data-nombre="{{ $proveedor->nombre }}" title="Reactivar">🟢</button>
                                 @endif
-                            @endif
+                            @endcan
                             
-                            {{-- Eliminar: Solo Super Admin y Administrador y sin productos --}}
-                            @if(auth()->user()->hasRole(['Super Admin', 'Administrador']) && $proveedor->productos->count() == 0)
-                                @if($proveedor->activo)
-                                <button type="button"
-                                    class="p-2 text-gray-400 transition btn-eliminar hover:text-red-600"
-                                    data-id="{{ $proveedor->id }}"
-                                    data-nombre="{{ $proveedor->nombre }}"
-                                    title="Eliminar">
-                                    🗑️
-                                </button>
+                            {{-- Eliminar --}}
+                            @can('eliminar_proveedores')
+                                @if($totalAsociados == 0)
+                                <button type="button" class="p-2 text-gray-400 transition btn-eliminar hover:text-red-600"
+                                    data-id="{{ $proveedor->id }}" data-nombre="{{ $proveedor->nombre }}" title="Eliminar">🗑️</button>
+                                @else
+                                <span class="p-2 text-gray-300 cursor-not-allowed" 
+                                      title="Tiene {{ $prodCount }} producto(s) y {{ $insumoCount }} insumo(s). No se puede eliminar.">🔒</span>
                                 @endif
-                            @elseif($proveedor->productos->count() > 0)
-                                <span class="p-2 text-gray-300 cursor-not-allowed" title="No se puede eliminar, tiene productos asociados">🔒</span>
-                            @endif
+                            @endcan
                         </div>
                     </td>
                 </tr>
                 @empty
-                <tr><td colspan="7" class="px-6 py-12 text-center text-gray-400">
+                <tr><td colspan="8" class="px-6 py-12 text-center text-gray-400">
                     No hay proveedores registrados
-                    <div class="mt-2">
-                        <a href="{{ route('proveedores.create') }}" class="text-indigo-600 hover:text-indigo-800">+ Crear primer proveedor</a>
-                    </div>
+                    @can('crear_proveedores')
+                    <div class="mt-2"><a href="{{ route('proveedores.create') }}" class="text-indigo-600 hover:text-indigo-800">+ Crear primer proveedor</a></div>
+                    @endcan
                 </td></tr>
                 @endforelse
             </tbody>
         </table>
     </div>
-
-    <div class="px-6 py-4 border-t">
-        {{ $proveedores->links() }}
-    </div>
+    <div class="px-6 py-4 border-t">{{ $proveedores->links() }}</div>
 </div>
 
-@push('scripts')
 <script>
-    document.addEventListener('DOMContentLoaded', function() {
-        // Configurar Axios
-        axios.defaults.headers.common['X-CSRF-TOKEN'] = document.querySelector('meta[name="csrf-token"]').content;
-        axios.defaults.headers.common['Accept'] = 'application/json';
-        axios.defaults.headers.common['Content-Type'] = 'application/json';
-        
-        // Función para mostrar Swal
-        function showSwal(icon, title, message, reload = false) {
-            Swal.fire({
-                icon: icon,
-                title: title,
-                text: message,
-                confirmButtonText: 'Cerrar'
-            }).then(() => {
-                if (reload) {
-                    location.reload();
-                }
+document.addEventListener('DOMContentLoaded', function() {
+    if (typeof axios === 'undefined') { console.error('Axios no disponible'); return; }
+    
+    axios.defaults.headers.common['X-CSRF-TOKEN'] = '{{ csrf_token() }}';
+    axios.defaults.headers.common['Accept'] = 'application/json';
+    
+    const canEdit = @json(auth()->user()->can('editar_proveedores'));
+    const canDelete = @json(auth()->user()->can('eliminar_proveedores'));
+
+    // DESACTIVAR
+    document.querySelectorAll('.btn-desactivar').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            if (!canEdit) { Swal.fire({ icon: 'error', title: 'Acceso denegado', confirmButtonColor: '#ef4444' }); return; }
+            const { id, nombre } = btn.dataset;
+            const { isConfirmed } = await Swal.fire({
+                title: '¿Desactivar?', html: `<strong>${nombre}</strong>`, icon: 'warning',
+                showCancelButton: true, confirmButtonColor: '#d33', cancelButtonColor: '#6b7280',
+                confirmButtonText: 'Sí, desactivar', cancelButtonText: 'Cancelar'
             });
-        }
-        
-        // ==================== DESACTIVAR PROVEEDOR ====================
-        const desactivarBtns = document.querySelectorAll('.btn-desactivar');
-        
-        desactivarBtns.forEach(btn => {
-            btn.addEventListener('click', async () => {
-                const { id, nombre, productos } = btn.dataset;
-                
-                if (parseInt(productos) > 0) {
-                    Swal.fire({
-                        icon: 'warning',
-                        title: 'No se puede desactivar',
-                        text: `El proveedor "${nombre}" tiene ${productos} producto(s) asociados. No se puede desactivar.`,
-                        confirmButtonColor: '#4f46e5',
-                        confirmButtonText: 'Entendido'
-                    });
-                    return;
-                }
-                
-                const confirm = await Swal.fire({
-                    title: '¿Desactivar proveedor?',
-                    html: `Proveedor: <strong>${nombre}</strong><br><br>El proveedor quedará inactivo pero sus datos se conservarán.`,
-                    icon: 'warning',
-                    showCancelButton: true,
-                    confirmButtonColor: '#d33',
-                    confirmButtonText: 'Sí, desactivar',
-                    cancelButtonText: 'Cancelar'
-                });
-                
-                if (confirm.isConfirmed) {
-                    Swal.fire({
-                        title: 'Desactivando...',
-                        allowOutsideClick: false,
-                        didOpen: () => Swal.showLoading()
-                    });
-                    
-                    try {
-                        const response = await axios.post(`/proveedores/${id}/toggle-activo`);
-                        const data = response.data;
-                        
-                        Swal.fire({
-                            icon: data.icon || 'success',
-                            title: 'Desactivado',
-                            text: data.message,
-                            confirmButtonText: 'Cerrar'
-                        }).then(() => {
-                            location.reload();
-                        });
-                    } catch (error) {
-                        const msg = error.response?.data?.message || 'Error al desactivar el proveedor';
-                        showSwal('error', 'Error', msg);
-                    }
-                }
-            });
-        });
-        
-        // ==================== REACTIVAR PROVEEDOR ====================
-        const reactivarBtns = document.querySelectorAll('.btn-reactivar');
-        
-        reactivarBtns.forEach(btn => {
-            btn.addEventListener('click', async () => {
-                const { id, nombre } = btn.dataset;
-                
-                const confirm = await Swal.fire({
-                    title: '¿Reactivar proveedor?',
-                    html: `Proveedor: <strong>${nombre}</strong><br><br>El proveedor volverá a estar activo en el sistema.`,
-                    icon: 'question',
-                    showCancelButton: true,
-                    confirmButtonColor: '#10b981',
-                    confirmButtonText: 'Sí, reactivar',
-                    cancelButtonText: 'Cancelar'
-                });
-                
-                if (confirm.isConfirmed) {
-                    Swal.fire({
-                        title: 'Reactivando...',
-                        allowOutsideClick: false,
-                        didOpen: () => Swal.showLoading()
-                    });
-                    
-                    try {
-                        const response = await axios.post(`/proveedores/${id}/toggle-activo`);
-                        const data = response.data;
-                        
-                        Swal.fire({
-                            icon: data.icon || 'success',
-                            title: 'Reactivado',
-                            text: data.message,
-                            confirmButtonText: 'Cerrar'
-                        }).then(() => {
-                            location.reload();
-                        });
-                    } catch (error) {
-                        const msg = error.response?.data?.message || 'Error al reactivar el proveedor';
-                        showSwal('error', 'Error', msg);
-                    }
-                }
-            });
-        });
-        
-        // ==================== ELIMINAR PROVEEDOR (FÍSICAMENTE) ====================
-        const eliminarBtns = document.querySelectorAll('.btn-eliminar');
-        
-        eliminarBtns.forEach(btn => {
-            btn.addEventListener('click', async () => {
-                const { id, nombre } = btn.dataset;
-                
-                const confirm = await Swal.fire({
-                    title: '¿Eliminar proveedor?',
-                    html: `Proveedor: <strong>${nombre}</strong><br><br>Esta acción eliminará permanentemente al proveedor. No se puede deshacer.`,
-                    icon: 'error',
-                    showCancelButton: true,
-                    confirmButtonColor: '#d33',
-                    confirmButtonText: 'Sí, eliminar',
-                    cancelButtonText: 'Cancelar'
-                });
-                
-                if (confirm.isConfirmed) {
-                    Swal.fire({
-                        title: 'Eliminando...',
-                        allowOutsideClick: false,
-                        didOpen: () => Swal.showLoading()
-                    });
-                    
-                    try {
-                        const response = await axios.delete(`/proveedores/${id}`);
-                        const data = response.data;
-                        
-                        Swal.fire({
-                            icon: data.icon || 'success',
-                            title: 'Eliminado',
-                            text: data.message,
-                            confirmButtonText: 'Cerrar'
-                        }).then(() => {
-                            location.reload();
-                        });
-                    } catch (error) {
-                        const msg = error.response?.data?.message || 'Error al eliminar el proveedor';
-                        showSwal('error', 'Error', msg);
-                    }
-                }
-            });
+            if (!isConfirmed) return;
+            Swal.fire({ title: 'Procesando...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+            try {
+                const res = await axios.put(`/proveedores/${id}/desactivar`);
+                if (res.data?.success) { await Swal.fire({ icon: 'success', title: '¡Desactivado!', timer: 2000 }); location.reload(); }
+                else throw new Error(res.data?.message || 'Error');
+            } catch(e) {
+                Swal.fire({ icon: 'error', title: 'Error', text: e.response?.data?.message || 'Error', confirmButtonColor: '#ef4444' });
+            }
         });
     });
+
+    // REACTIVAR
+    document.querySelectorAll('.btn-reactivar').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            if (!canEdit) { Swal.fire({ icon: 'error', title: 'Acceso denegado', confirmButtonColor: '#ef4444' }); return; }
+            const { id, nombre } = btn.dataset;
+            const { isConfirmed } = await Swal.fire({
+                title: '¿Reactivar?', html: `<strong>${nombre}</strong>`, icon: 'question',
+                showCancelButton: true, confirmButtonColor: '#10b981', cancelButtonColor: '#6b7280',
+                confirmButtonText: 'Sí, reactivar', cancelButtonText: 'Cancelar'
+            });
+            if (!isConfirmed) return;
+            Swal.fire({ title: 'Procesando...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+            try {
+                const res = await axios.put(`/proveedores/${id}/reactivar`);
+                if (res.data?.success) { await Swal.fire({ icon: 'success', title: '¡Reactivado!', timer: 2000 }); location.reload(); }
+            } catch(e) {
+                Swal.fire({ icon: 'error', title: 'Error', text: e.response?.data?.message || 'Error', confirmButtonColor: '#ef4444' });
+            }
+        });
+    });
+
+    // ELIMINAR
+    document.querySelectorAll('.btn-eliminar').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            if (!canDelete) { Swal.fire({ icon: 'error', title: 'Acceso denegado', confirmButtonColor: '#ef4444' }); return; }
+            const { id, nombre } = btn.dataset;
+            const { isConfirmed } = await Swal.fire({
+                title: '¿Eliminar permanentemente?', 
+                html: `<strong>${nombre}</strong><br><br>⚠️ Esta acción NO se puede deshacer.`, 
+                icon: 'error',
+                showCancelButton: true, confirmButtonColor: '#d33', cancelButtonColor: '#6b7280',
+                confirmButtonText: 'Sí, eliminar', cancelButtonText: 'Cancelar'
+            });
+            if (!isConfirmed) return;
+            Swal.fire({ title: 'Eliminando...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+            try {
+                const res = await axios.delete(`/proveedores/${id}`);
+                if (res.data?.success) { await Swal.fire({ icon: 'success', title: '¡Eliminado!', timer: 2000 }); location.reload(); }
+            } catch(e) {
+                Swal.fire({ icon: 'error', title: 'Error', text: e.response?.data?.message || 'Error', confirmButtonColor: '#ef4444' });
+            }
+        });
+    });
+});
 </script>
-@endpush
 @endsection

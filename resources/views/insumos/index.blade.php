@@ -3,12 +3,8 @@
 @section('title', 'Insumos')
 @section('page-title', 'Insumos')
 @section('breadcrumbs')
-    <li>
-        <span class="text-gray-400">/</span>
-    </li>
-    <li>
-        <span class="font-medium text-gray-700">Insumos</span>
-    </li>
+    <li><span class="text-gray-400">/</span></li>
+    <li><span class="font-medium text-gray-700">Insumos</span></li>
 @endsection
 
 @section('content')
@@ -16,11 +12,32 @@
 <x-alert type="success" :message="session('success')" />
 <x-alert type="error" :message="session('error')" />
 
+{{-- Verificar permisos para mostrar botones --}}
+@php
+    $puedeCrear = auth()->user()->can('crear_insumos');
+    $puedeEditar = auth()->user()->can('editar_insumos');
+    $puedeEliminar = auth()->user()->can('eliminar_insumos');
+    $puedeExportar = auth()->user()->can('ver_insumos');
+@endphp
+
 <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
     <span class="text-sm text-gray-400">Mostrando {{ $insumos->count() }} de {{ $insumos->total() }} insumos</span>
-    @if(auth()->user()->hasRole(['Super Admin', 'Administrador']))
-    <a href="{{ route('insumos.export') }}" class="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white transition bg-green-600 shadow rounded-xl hover:bg-green-700">📥 Exportar Excel</a>
-    @endif
+    
+    <div class="flex gap-2">
+        @can('ver_insumos')
+        <a href="{{ route('insumos.export') }}" 
+           class="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white transition bg-green-600 shadow rounded-xl hover:bg-green-700">
+            📥 Exportar Excel
+        </a>
+        @endcan
+        
+        @can('crear_insumos')
+        <a href="{{ route('insumos.create') }}" 
+           class="px-4 py-2 text-sm font-medium text-white transition shadow bg-gradient-to-r from-indigo-600 to-cyan-500 rounded-xl hover:from-indigo-700 hover:to-cyan-600">
+            + Nuevo insumo
+        </a>
+        @endcan
+    </div>
 </div>
 
 <div class="overflow-hidden bg-white shadow-lg rounded-3xl">
@@ -29,7 +46,6 @@
             <h2 class="text-lg font-semibold text-slate-800">Lista de insumos</h2>
             <p class="mt-1 text-sm text-gray-500">Gestiona tus materias primas e insumos</p>
         </div>
-        <a href="{{ route('insumos.create') }}" class="px-4 py-2 text-sm font-medium text-white transition shadow bg-gradient-to-r from-indigo-600 to-cyan-500 rounded-xl hover:from-indigo-700 hover:to-cyan-600">+ Nuevo insumo</a>
     </div>
 
     <div class="overflow-x-auto">
@@ -84,24 +100,44 @@
                         </span>
                     </td>
                     <td class="px-6 py-4 text-center">
-                        @if($insumo->activo)
-                            <span class="text-sm text-green-600">● Activo</span>
-                        @else
-                            <span class="text-sm text-red-600">● Inactivo</span>
-                        @endif
+                        <span class="text-sm {{ $insumo->activo ? 'text-green-600' : 'text-red-600' }}">
+                            {{ $insumo->activo ? '● Activo' : '● Inactivo' }}
+                        </span>
                     </td>
                     <td class="px-6 py-4">
                         <div class="flex items-center justify-end gap-2">
-                            <a href="{{ route('insumos.show', $insumo) }}" class="p-2 text-gray-400 transition hover:text-indigo-600" title="Ver">
+                            {{-- Ver: todos los que pueden ver insumos --}}
+                            @can('ver_insumos')
+                            <a href="{{ route('insumos.show', $insumo) }}" 
+                               class="p-2 text-gray-400 transition hover:text-indigo-600" title="Ver">
                                 👁️
                             </a>
-                            <a href="{{ route('insumos.edit', $insumo) }}" class="p-2 text-gray-400 transition hover:text-amber-600" title="Editar">
+                            @endcan
+                            
+                            {{-- Editar: solo quien tiene permiso --}}
+                            @can('editar_insumos')
+                            <a href="{{ route('insumos.edit', $insumo) }}" 
+                               class="p-2 text-gray-400 transition hover:text-amber-600" title="Editar">
                                 ✏️
                             </a>
-                            <button type="button" onclick="toggleActivo({{ $insumo->id }}, {{ $insumo->activo ? 'true' : 'false' }}, '{{ $insumo->nombre }}')" 
-                                    class="p-2 text-gray-400 transition hover:text-indigo-600" title="{{ $insumo->activo ? 'Desactivar' : 'Activar' }}">
+                            @endcan
+                            
+                            {{-- Activar/Desactivar: solo quien tiene permiso --}}
+                            @can('editar_insumos')
+                            <button type="button" 
+                                    onclick="toggleActivoIns({{ $insumo->id }}, '{{ addslashes($insumo->nombre) }}')" 
+                                    class="p-2 text-gray-400 transition hover:text-indigo-600" 
+                                    title="{{ $insumo->activo ? 'Desactivar' : 'Activar' }}">
                                 {{ $insumo->activo ? '🔴' : '🟢' }}
                             </button>
+                            @endcan
+                            
+                            {{-- Sin permisos de edición --}}
+                            @cannot('editar_insumos')
+                                @cannot('ver_insumos')
+                                    <span class="text-xs text-gray-400">Sin acceso</span>
+                                @endcannot
+                            @endcannot
                         </div>
                     </td>
                 </tr>
@@ -120,55 +156,123 @@
     </div>
 </div>
 
+{{-- ✅ SCRIPT DIRECTO, no dentro de @push --}}
 <script>
-function toggleActivo(id, activo, nombre) {
-    const accion = activo ? 'desactivar' : 'activar';
+    // Esperar a que Axios y Swal estén disponibles
+    document.addEventListener('DOMContentLoaded', function() {
+        console.log('✅ [INSUMOS] DOM listo, verificando Axios y Swal...');
+        console.log('   Axios:', typeof axios !== 'undefined' ? '✅' : '❌');
+        console.log('   Swal:', typeof Swal !== 'undefined' ? '✅' : '❌');
+        
+        if (typeof axios === 'undefined') {
+            console.error('❌ [INSUMOS] Axios no está disponible');
+            return;
+        }
+        
+        // Configurar Axios (ya configurado globalmente, pero aseguramos)
+        axios.defaults.headers.common['X-CSRF-TOKEN'] = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '{{ csrf_token() }}';
+        axios.defaults.headers.common['Accept'] = 'application/json';
+        
+        console.log('✅ [INSUMOS] Axios configurado');
+    });
     
-    Swal.fire({
-        title: `¿${accion === 'activar' ? 'Activar' : 'Desactivar'} insumo?`,
-        text: `¿Estás seguro de ${accion} el insumo "${nombre}"?`,
-        icon: 'question',
-        showCancelButton: true,
-        confirmButtonColor: '#4f46e5',
-        cancelButtonColor: '#6b7280',
-        confirmButtonText: `Sí, ${accion}`,
-        cancelButtonText: 'Cancelar'
-    }).then((result) => {
-        if (result.isConfirmed) {
-            fetch(`/insumos/${id}/toggle-activo`, {
-                method: 'POST',
-                headers: {
-                    'X-CSRF-TOKEN': '{{ csrf_token() }}',
-                    'Content-Type': 'application/json'
-                }
-            }).then(response => response.json()).then(data => {
-                if (data.success) {
-                    Swal.fire({
-                        icon: 'success',
-                        title: 'Estado actualizado',
-                        text: data.message,
-                        confirmButtonColor: '#4f46e5'
-                    }).then(() => {
-                        location.reload();
-                    });
-                } else {
-                    Swal.fire({
-                        icon: 'error',
-                        title: 'Error',
-                        text: data.message,
-                        confirmButtonColor: '#4f46e5'
-                    });
-                }
-            }).catch(error => {
-                Swal.fire({
-                    icon: 'error',
-                    title: 'Error',
-                    text: 'Error de conexión',
-                    confirmButtonColor: '#4f46e5'
+    // Verificar permiso desde Blade
+    const canEditInsumos = @json(auth()->user()->can('editar_insumos'));
+    console.log('🔑 [INSUMOS] canEditInsumos:', canEditInsumos);
+
+    /**
+     * Activar/Desactivar insumo
+     */
+    async function toggleActivoIns(id, nombre) {
+        console.log('📂 [INSUMOS] toggleActivoIns llamado:', { id, nombre });
+        
+        // Verificar que Axios existe
+        if (typeof axios === 'undefined') {
+            console.error('❌ [INSUMOS] Axios no está definido');
+            alert('Error: Axios no está disponible. Recarga la página.');
+            return;
+        }
+        
+        // Verificar permiso
+        if (!canEditInsumos) {
+            Swal.fire({
+                icon: 'error',
+                title: 'Acceso denegado',
+                text: 'No tienes permisos para modificar insumos.',
+                confirmButtonColor: '#ef4444'
+            });
+            return;
+        }
+        
+        // Confirmar
+        const { isConfirmed } = await Swal.fire({
+            title: '¿Cambiar estado?',
+            html: `¿Estás seguro de cambiar el estado de <strong>"${nombre}"</strong>?`,
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonColor: '#4f46e5',
+            cancelButtonColor: '#6b7280',
+            confirmButtonText: 'Sí, cambiar',
+            cancelButtonText: 'Cancelar'
+        });
+        
+        if (!isConfirmed) return;
+        
+        // Loading
+        Swal.fire({
+            title: 'Procesando...',
+            allowOutsideClick: false,
+            didOpen: () => Swal.showLoading()
+        });
+        
+        try {
+            console.log('📤 [INSUMOS] Enviando POST a:', `/insumos/${id}/toggle-activo`);
+            
+            const response = await axios.post(`/insumos/${id}/toggle-activo`);
+            
+            console.log('📥 [INSUMOS] Respuesta:', response.data);
+            
+            if (response.data && response.data.success) {
+                await Swal.fire({
+                    icon: 'success',
+                    title: '¡Éxito!',
+                    html: response.data.message || 'Estado actualizado',
+                    confirmButtonColor: '#10b981',
+                    timer: 2000
                 });
+                location.reload();
+            } else {
+                throw new Error(response.data.message || 'Error desconocido');
+            }
+        } catch (error) {
+            console.error('❌ [INSUMOS] Error:', error);
+            
+            let errorMessage = 'Ocurrió un error al cambiar el estado';
+            
+            if (error.response) {
+                console.log('   Status:', error.response.status);
+                console.log('   Data:', error.response.data);
+                
+                if (error.response.status === 403) {
+                    errorMessage = 'No tienes permisos para realizar esta acción';
+                } else if (error.response.status === 404) {
+                    errorMessage = 'Insumo no encontrado';
+                } else if (error.response.data?.message) {
+                    errorMessage = error.response.data.message;
+                }
+            } else if (error.request) {
+                errorMessage = 'Error de conexión. Verifica tu internet.';
+            }
+            
+            await Swal.fire({
+                icon: 'error',
+                title: 'Error',
+                text: errorMessage,
+                confirmButtonColor: '#ef4444'
             });
         }
-    });
-}
+    }
+    
+    console.log('✅ [INSUMOS] Funciones listas: toggleActivoIns');
 </script>
 @endsection

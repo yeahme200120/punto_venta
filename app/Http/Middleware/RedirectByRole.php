@@ -13,12 +13,11 @@ class RedirectByRole
 {
     public function handle(Request $request, Closure $next)
     {
-        // Si no está autenticado, continuar
         if (!Auth::check()) {
             return $next($request);
         }
 
-        // ❗ IGNORAR RUTAS DE AUTENTICACIÓN
+        // Ignorar rutas de autenticación
         $authRoutes = ['login', 'logout', 'password/*', 'verify-email', 'register'];
         foreach ($authRoutes as $route) {
             if ($request->routeIs($route) || $request->is($route)) {
@@ -26,159 +25,165 @@ class RedirectByRole
             }
         }
 
-        // ✅ PERMITIR RUTAS DEL CARRITO PARA TODOS LOS USUARIOS AUTENTICADOS
+        // Permitir carrito para todos
         if ($request->is('carrito') || $request->is('carrito/*')) {
-            Log::info('Ruta de carrito permitida para: ' . $request->path());
             return $next($request);
         }
 
         $user = Auth::user();
+        if (!$user) return redirect()->route('login');
 
-        if (!$user) {
-            return redirect()->route('login');
-        }
-
-        // 🔹 SUPER ADMIN: Acceso total
+        // Super Admin: acceso total
         if ($user->hasRole('Super Admin')) {
             return $next($request);
         }
 
-        // 🔹 OBTENER RUTAS PERMITIDAS DINÁMICAMENTE SEGÚN PERMISOS DEL USUARIO
         $rutasPermitidas = $this->obtenerRutasPermitidas($user);
-
-        // Verificar si la ruta actual está permitida
         $rutaActual = $request->path();
-        $accesoPermitido = false;
 
         foreach ($rutasPermitidas as $patron) {
             if ($request->is($patron)) {
-                $accesoPermitido = true;
-                break;
+                return $next($request);
             }
         }
 
-        if ($accesoPermitido) {
-            return $next($request);
-        }
-
-        // Si no tiene acceso, redirigir al dashboard o a su vista principal
-        $mensaje = '🔒 Acceso denegado. No tienes permiso para acceder a: ' . $rutaActual;
         Log::warning('Acceso denegado (RedirectByRole): ' . $rutaActual . ' - Usuario: ' . $user->email);
-
-        $rutaRedireccion = $this->getHomeRoute($user);
-
-        return redirect()->route($rutaRedireccion)
-            ->with('swal_error', $mensaje);
+        return redirect()->route($this->getHomeRoute($user))
+            ->with('swal_error', '🔒 Acceso denegado: ' . $rutaActual);
     }
 
-    /**
-     * Obtener rutas permitidas dinámicamente según los permisos del usuario
-     */
     private function obtenerRutasPermitidas($user)
     {
-        $rutasPermitidas = [];
+        $rutas = [];
 
-        // Obtener todos los menús a los que el usuario tiene acceso
-        $menus = Menu::where('activo', true)
-            ->whereNotNull('ruta')
-            ->get();
-
+        // ✅ Rutas de la tabla menus
+        $menus = Menu::where('activo', true)->whereNotNull('ruta')->get();
         foreach ($menus as $menu) {
-            // Si el menú tiene un permiso específico, verificar que el usuario lo tenga
-            if ($menu->permiso) {
-                if ($user->can($menu->permiso)) {
-                    $rutasPermitidas[] = $this->convertirRutaAPatron($menu->ruta);
-                }
-            } else {
-                // Si no tiene permiso específico, permitir acceso (fallback)
-                $rutasPermitidas[] = $this->convertirRutaAPatron($menu->ruta);
+            if (!$menu->permiso || $user->can($menu->permiso)) {
+                $rutas[] = $this->convertirRutaAPatron($menu->ruta);
             }
         }
 
-        // Agregar rutas base siempre permitidas
-        $rutasBase = [
-            'dashboard',
-            'perfil',
-            'perfil/*',
-            'logout',
-            'carrito',             // Carrito principal
-            'carrito/*',
-        ];
+        // ✅ Rutas por permisos
+        $rutas = array_merge($rutas, $this->obtenerRutasPorPermisos($user));
 
-        $rutasPermitidas = array_merge($rutasPermitidas, $rutasBase);
+        // ✅ Rutas base
+        $rutas = array_merge($rutas, ['dashboard', 'perfil', 'perfil/*', 'logout', 'carrito', 'carrito/*']);
 
-        // Eliminar duplicados y vacíos
-        $rutasPermitidas = array_unique(array_filter($rutasPermitidas));
+        $rutas = array_unique(array_filter($rutas));
+        
+        Log::info('Rutas permitidas para ' . $user->email . ': ' . json_encode(array_values($rutas)));
 
-        Log::info('Rutas permitidas para usuario ' . $user->email . ': ' . json_encode($rutasPermitidas));
-
-        return $rutasPermitidas;
+        return $rutas;
     }
 
-    /**
-     * Convertir una ruta a patrón para matching
-     * Ej: /clientes -> clientes*
-     *     /clientes/create -> clientes/create
-     *     /categorias -> categorias*
-     */
+    private function obtenerRutasPorPermisos($user)
+    {
+        $rutas = [];
+
+        // ✅ MAPEO COMPLETO DE PERMISOS A RUTAS
+        $mapa = [
+            // Caja
+            'ver_caja'              => ['caja*', 'caja/*', 'cajas*', 'cajas/*'],
+            'abrir_caja'            => ['caja/abrir', 'caja/abrir/*'],
+            'cerrar_caja'           => ['caja/cerrar', 'caja/cerrar/*'],
+            'ver_apertura_cierre'   => ['caja/apertura*', 'caja/apertura/*'],
+            'ver_movimientos_caja'  => ['caja/operaciones*', 'caja/operaciones/*'],
+            'registrar_movimiento_caja' => ['caja/movimiento*', 'caja/movimiento/*'],
+            'realizar_arqueo'       => ['caja/arqueo*', 'caja/arqueo/*', 'caja/arqueos*', 'caja/arqueos/*'],
+            'ver_transferencias_caja' => ['caja/transferencia*', 'caja/transferencias*'],
+            'ver_autorizaciones_caja' => ['caja/autorizaciones*', 'caja/autorizacion*'],
+            'ver_reporte_caja_diario' => ['caja/reporte*', 'caja/reporte/*'],
+            'ver_dashboard_caja'    => ['dashboard-caja*', 'dashboard-caja/*'],
+
+            // Clientes
+            'ver_clientes'          => ['clientes*', 'clientes/*'],
+
+            // Productos
+            'ver_productos'         => ['productos*', 'productos/*'],
+
+            // Proveedores
+            'ver_proveedores'       => ['proveedores*', 'proveedores/*'],
+
+            // Categorías
+            'ver_categorias'        => ['categorias*', 'categorias/*'],
+
+            // Insumos
+            'ver_insumos'           => ['insumos*', 'insumos/*'],
+
+            // Unidades de medida
+            'ver_unidades_medida'   => ['unidades-medida*', 'unidades-medida/*'],
+
+            // Ventas
+            'ver_ventas'            => ['ventas*', 'ventas/*'],
+
+            // Cotizaciones
+            'ver_cotizaciones'      => ['cotizaciones*', 'cotizaciones/*'],
+
+            // Cobranza
+            'ver_cobranza'          => ['cobranza*', 'cobranza/*'],
+
+            // Reportes
+            'ver_reportes'          => ['reportes*', 'reportes/*'],
+
+            // Usuarios
+            'ver_usuarios'          => ['usuarios*', 'usuarios/*'],
+
+            // Roles
+            'ver_roles'             => ['roles*', 'roles/*'],
+
+            // Respaldos
+            'ver_respaldos'         => ['respaldos*', 'respaldos/*'],
+
+            // Empresas
+            'ver_empresas'          => ['empresas*', 'empresas/*', 'empresa/*'],
+
+            // Licencias
+            'ver_licencias'         => ['licencias*', 'licencias/*'],
+
+            // Sucursales
+            'ver_sucursales'        => ['sucursales*', 'sucursales/*', 'sucursal/*'],
+
+            // Impresoras
+            'ver_impresoras'        => ['impresoras*', 'impresoras/*'],
+
+            // Formas de pago
+            'ver_formaspago'        => ['formas-pago*', 'formas-pago/*'],
+
+            // Ticket
+            'ver_ticket'            => ['ticket*', 'ticket/*'],
+
+            // Inventario
+            'ver_inventario'        => ['inventario*', 'inventario/*'],
+        ];
+
+        foreach ($mapa as $permiso => $rutasPermitidas) {
+            if ($user->can($permiso)) {
+                $rutas = array_merge($rutas, $rutasPermitidas);
+            }
+        }
+
+        return $rutas;
+    }
+
     private function convertirRutaAPatron($ruta)
     {
-        // Eliminar slash inicial
         $ruta = ltrim($ruta, '/');
-
-        // Si la ruta tiene subrutas (ej: clientes/create), mantenerla exacta
-        // y también permitir subrutas hijas
-        if (strpos($ruta, '/') !== false) {
-            // Para rutas con múltiples segmentos, permitir exactamente esa ruta
-            // y sus subrutas
-            return $ruta . '*';
-        }
-
-        // Para rutas simples, permitir toda la rama
-        return $ruta . '*';
+        return (strpos($ruta, '/') !== false) ? $ruta . '*' : $ruta . '*';
     }
 
-    /**
-     * Obtener la ruta de inicio según el rol del usuario
-     */
     private function getHomeRoute($user)
     {
-        $role = $user->getRoleNames()->first();
-
-        // Priorizar la primera ruta a la que tenga acceso
-        $rutasPrioritarias = [
-            'ventas.index',
-            'cajas.operaciones',
-            'cobranza.index',
-            'dashboard',
-        ];
-
-        foreach ($rutasPrioritarias as $ruta) {
-            try {
-                $path = route($ruta, [], false);
-                $path = ltrim($path, '/');
-
-                // Verificar si el usuario tiene acceso a esta ruta
-                $menus = \App\Models\Menu::where('ruta', 'LIKE', '%' . $path . '%')->first();
-                if ($menus) {
-                    if (!$menus->permiso || $user->can($menus->permiso)) {
-                        return $ruta;
-                    }
-                }
-            } catch (\Exception $e) {
-                continue;
-            }
-        }
-
-        // Fallback por rol
+        $role = $user->getRoleNames()->first() ?? '';
+        
         $roleRoutes = [
-            'Super Admin' => 'dashboard',
-            'Administrador' => 'dashboard',
-            'Vendedor' => 'ventas.index',
-            'Cajero' => 'cajas.operaciones',
-            'Cobrador' => 'cobranza.index',
+            'Super Admin'    => 'dashboard',
+            'Administrador'  => 'dashboard',
+            'Vendedor'       => 'ventas.index',
+            'Cajero'         => 'cajas.apertura',
+            'Cobrador'       => 'cobranza.index',
         ];
 
-        return $roleRoutes[$role] ?? 'productos.index';
+        return $roleRoutes[$role] ?? 'dashboard';
     }
 }

@@ -3,6 +3,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\CajaApertura;
 use App\Models\Carrito;
 use App\Models\Cotizacion;
 use App\Models\CotizacionDetalle;
@@ -30,28 +31,50 @@ class CotizacionController extends Controller
         }
         return auth()->user()->sucursal_id;
     }
-    public function index()
+    public function index(Request $request)
     {
         try {
             $empresaId = $this->empresaActivaId();
+            $sucursalId = $this->sucursalActivaId();
+            $user = auth()->user();
 
-            Log::info('Cotizaciones - Empresa ID: ' . $empresaId);
-            Log::info('Cotizaciones - Usuario: ' . auth()->user()->name);
-            Log::info('Cotizaciones - Rol: ' . auth()->user()->getRoleNames()->first());
+            // ✅ Filtrar por caja si se selecciona una
+            $cajaSeleccionadaId = $request->caja_id ?? session('caja_filtro_id');
 
             $cotizaciones = Cotizacion::where('empresa_id', $empresaId)
-                ->with(['usuario', 'cliente'])
+                ->when($cajaSeleccionadaId, function ($q) use ($cajaSeleccionadaId) {
+                    // Si tienes relación con caja_apertura_id en cotizaciones
+                    // return $q->where('caja_apertura_id', $cajaSeleccionadaId);
+                    // O si no, mostrar todas (el filtro es solo visual)
+                })
+                ->with(['usuario', 'cliente', 'detalles'])
                 ->orderBy('created_at', 'desc')
                 ->paginate(20);
 
-            Log::info('Cotizaciones encontradas: ' . $cotizaciones->total());
+            // Obtener cajas activas
+            $cajaAbierta = null;
+            $cajasActivas = collect();
 
-            return view('cotizaciones.index', compact('cotizaciones'));
+            if ($user->hasRole('Vendedor') || $user->hasRole('Cobrador')) {
+                $cajasActivas = CajaApertura::where('sucursal_id', $sucursalId)
+                    ->where('estado', 'abierta')->with(['caja', 'usuario'])->get();
+                if ($cajasActivas->count() === 1)
+                    $cajaAbierta = $cajasActivas->first();
+            } elseif ($user->hasRole('Cajero')) {
+                $cajaAbierta = CajaApertura::where('sucursal_id', $sucursalId)
+                    ->where('user_id', auth()->id())->where('estado', 'abierta')->with(['caja', 'usuario'])->first();
+            } else {
+                $cajasActivas = CajaApertura::where('sucursal_id', $sucursalId)
+                    ->where('estado', 'abierta')->with(['caja', 'usuario'])->get();
+                if ($cajasActivas->count() === 1)
+                    $cajaAbierta = $cajasActivas->first();
+            }
+
+            return view('cotizaciones.index', compact('cotizaciones', 'cajaAbierta', 'cajasActivas', 'cajaSeleccionadaId'));
 
         } catch (\Exception $e) {
             Log::error('Error en cotizaciones index: ' . $e->getMessage());
-            Log::error($e->getTraceAsString());
-            return back()->with('error', 'Error al cargar cotizaciones: ' . $e->getMessage());
+            return back()->with('error', 'Error al cargar cotizaciones.');
         }
     }
 

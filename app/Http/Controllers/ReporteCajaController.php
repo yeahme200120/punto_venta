@@ -1,5 +1,4 @@
 <?php
-// app/Http/Controllers/ReporteCajaController.php
 namespace App\Http\Controllers;
 
 use App\Models\Caja;
@@ -27,6 +26,33 @@ class ReporteCajaController extends Controller
         return auth()->user()->sucursal_id;
     }
 
+    /**
+     * Obtener IDs de cajas apertura según el rol del usuario
+     */
+    private function getCajaAperturaIds()
+    {
+        $user = auth()->user();
+        $sucursalId = $this->sucursalActivaId();
+        $empresaId = $this->empresaActivaId();
+
+        $query = CajaApertura::where('estado', 'abierta')
+            ->whereHas('caja', function ($q) use ($empresaId, $sucursalId) {
+                $q->where('empresa_id', $empresaId);
+                if ($sucursalId) {
+                    $q->where('sucursal_id', $sucursalId);
+                }
+            });
+
+        // ✅ Cajero: solo sus propias cajas abiertas
+        if ($user->hasRole('Cajero')) {
+            $query->where('user_id', $user->id);
+        }
+        // ✅ Vendedor y Cobrador: cajas de su sucursal
+        // ✅ Admin: cajas de su empresa
+        // ✅ Super Admin: cajas de la empresa/sucursal activa
+
+        return $query->pluck('id')->toArray();
+    }
 
     public function dashboard(Request $request)
     {
@@ -37,15 +63,18 @@ class ReporteCajaController extends Controller
             $fechaInicio = $request->get('fecha_inicio', now()->startOfMonth()->format('Y-m-d'));
             $fechaFin = $request->get('fecha_fin', now()->endOfMonth()->format('Y-m-d'));
 
-            $datos = $this->getDatosGraficas($empresaId, $sucursalId, $fechaInicio, $fechaFin);
-            $resumen = $this->getResumenGeneral($empresaId, $sucursalId, $fechaInicio, $fechaFin);
-            $topMovimientos = $this->getTopMovimientos($empresaId, $sucursalId, $fechaInicio, $fechaFin);
+            // ✅ Obtener IDs de cajas apertura según el rol
+            $cajaAperturaIds = $this->getCajaAperturaIds();
 
-            // Preparar datos para JavaScript (sin closures)
+            $datos = $this->getDatosGraficas($empresaId, $sucursalId, $fechaInicio, $fechaFin, $cajaAperturaIds);
+            $resumen = $this->getResumenGeneral($empresaId, $sucursalId, $fechaInicio, $fechaFin, $cajaAperturaIds);
+            $topMovimientos = $this->getTopMovimientos($empresaId, $sucursalId, $fechaInicio, $fechaFin, $cajaAperturaIds);
+            $movimientosRecientes = $this->getMovimientosRecientes($empresaId, $sucursalId, $fechaInicio, $fechaFin, $cajaAperturaIds);
+
+            // Preparar datos para JavaScript
             $evolucionLabels = [];
             $evolucionIngresos = [];
             $evolucionEgresos = [];
-
             foreach ($datos['evolucion_diaria'] as $item) {
                 $evolucionLabels[] = $item->fecha;
                 $evolucionIngresos[] = floatval($item->ingresos);
@@ -54,26 +83,16 @@ class ReporteCajaController extends Controller
 
             $formaPagoLabels = [];
             $formaPagoValues = [];
-
             foreach ($datos['forma_pago'] as $item) {
                 $formaPagoLabels[] = ucfirst(str_replace('_', ' ', $item->forma_pago));
                 $formaPagoValues[] = floatval($item->total);
             }
 
-            $movimientosRecientes = $this->getMovimientosRecientes($empresaId, $sucursalId, $fechaInicio, $fechaFin);
-
             return view('reportes.caja-dashboard', compact(
-                'datos',
-                'resumen',
-                'topMovimientos',
-                'movimientosRecientes',
-                'fechaInicio',
-                'fechaFin',
-                'evolucionLabels',
-                'evolucionIngresos',
-                'evolucionEgresos',
-                'formaPagoLabels',
-                'formaPagoValues'
+                'datos', 'resumen', 'topMovimientos', 'movimientosRecientes',
+                'fechaInicio', 'fechaFin',
+                'evolucionLabels', 'evolucionIngresos', 'evolucionEgresos',
+                'formaPagoLabels', 'formaPagoValues'
             ));
         } catch (\Exception $e) {
             Log::error('Error en dashboard de caja: ' . $e->getMessage());
@@ -82,112 +101,67 @@ class ReporteCajaController extends Controller
     }
 
     /**
-     * Obtener datos para gráficas
+     * Aplicar filtro de cajas apertura a una query
      */
-    private function getDatosGraficas($empresaId, $sucursalId, $fechaInicio, $fechaFin)
+    private function filtrarPorCajas($query, $cajaAperturaIds)
     {
-        // 1. Evolución diaria (ingresos vs egresos)
+        if (!empty($cajaAperturaIds)) {
+            $query->whereIn('caja_apertura_id', $cajaAperturaIds);
+        }
+        return $query;
+    }
+
+    private function getDatosGraficas($empresaId, $sucursalId, $fechaInicio, $fechaFin, $cajaAperturaIds)
+    {
+        $baseQuery = function ($q) use ($empresaId, $sucursalId, $cajaAperturaIds) {
+            if (!empty($cajaAperturaIds)) {
+                $q->whereIn('caja_apertura_id', $cajaAperturaIds);
+            } else {
+                $q->whereHas('cajaApertura', function ($sub) use ($empresaId, $sucursalId) {
+                    $sub->whereHas('caja', function ($c) use ($empresaId, $sucursalId) {
+                        $c->where('empresa_id', $empresaId);
+                        if ($sucursalId) $c->where('sucursal_id', $sucursalId);
+                    });
+                });
+            }
+        };
+
         $evolucionDiaria = CajaMovimiento::select(
             DB::raw('DATE(created_at) as fecha'),
             DB::raw('SUM(CASE WHEN tipo = "ingreso" THEN monto ELSE 0 END) as ingresos'),
             DB::raw('SUM(CASE WHEN tipo = "egreso" THEN monto ELSE 0 END) as egresos')
         )
-            ->when($empresaId, function ($q) use ($empresaId, $sucursalId) {
-                $q->whereHas('cajaApertura', function ($sub) use ($empresaId, $sucursalId) {
-                    $sub->whereHas('caja', function ($c) use ($empresaId, $sucursalId) {
-                        $c->where('empresa_id', $empresaId);
-                        if ($sucursalId) {
-                            $c->where('sucursal_id', $sucursalId);
-                        }
-                    });
-                });
-            })
+            ->where($baseQuery)
             ->whereBetween('created_at', [$fechaInicio . ' 00:00:00', $fechaFin . ' 23:59:59'])
-            ->groupBy('fecha')
-            ->orderBy('fecha')
-            ->get();
+            ->groupBy('fecha')->orderBy('fecha')->get();
 
-        // 2. Distribución por forma de pago
-        $formaPago = CajaMovimiento::select(
-            'forma_pago',
-            DB::raw('SUM(monto) as total')
-        )
+        $formaPago = CajaMovimiento::select('forma_pago', DB::raw('SUM(monto) as total'))
             ->where('tipo', 'ingreso')
-            ->when($empresaId, function ($q) use ($empresaId, $sucursalId) {
-                $q->whereHas('cajaApertura', function ($sub) use ($empresaId, $sucursalId) {
-                    $sub->whereHas('caja', function ($c) use ($empresaId, $sucursalId) {
-                        $c->where('empresa_id', $empresaId);
-                        if ($sucursalId) {
-                            $c->where('sucursal_id', $sucursalId);
-                        }
-                    });
-                });
-            })
+            ->where($baseQuery)
             ->whereBetween('created_at', [$fechaInicio . ' 00:00:00', $fechaFin . ' 23:59:59'])
-            ->groupBy('forma_pago')
-            ->get();
+            ->groupBy('forma_pago')->get();
 
-        // 3. Distribución por categoría de ingresos
-        $categoriaIngresos = CajaMovimiento::select(
-            'categoria',
-            DB::raw('SUM(monto) as total')
-        )
+        $categoriaIngresos = CajaMovimiento::select('categoria', DB::raw('SUM(monto) as total'))
             ->where('tipo', 'ingreso')
-            ->when($empresaId, function ($q) use ($empresaId, $sucursalId) {
-                $q->whereHas('cajaApertura', function ($sub) use ($empresaId, $sucursalId) {
-                    $sub->whereHas('caja', function ($c) use ($empresaId, $sucursalId) {
-                        $c->where('empresa_id', $empresaId);
-                        if ($sucursalId) {
-                            $c->where('sucursal_id', $sucursalId);
-                        }
-                    });
-                });
-            })
+            ->where($baseQuery)
             ->whereBetween('created_at', [$fechaInicio . ' 00:00:00', $fechaFin . ' 23:59:59'])
-            ->groupBy('categoria')
-            ->get();
+            ->groupBy('categoria')->get();
 
-        // 4. Distribución por categoría de egresos
-        $categoriaEgresos = CajaMovimiento::select(
-            'categoria',
-            DB::raw('SUM(monto) as total')
-        )
+        $categoriaEgresos = CajaMovimiento::select('categoria', DB::raw('SUM(monto) as total'))
             ->where('tipo', 'egreso')
-            ->when($empresaId, function ($q) use ($empresaId, $sucursalId) {
-                $q->whereHas('cajaApertura', function ($sub) use ($empresaId, $sucursalId) {
-                    $sub->whereHas('caja', function ($c) use ($empresaId, $sucursalId) {
-                        $c->where('empresa_id', $empresaId);
-                        if ($sucursalId) {
-                            $c->where('sucursal_id', $sucursalId);
-                        }
-                    });
-                });
-            })
+            ->where($baseQuery)
             ->whereBetween('created_at', [$fechaInicio . ' 00:00:00', $fechaFin . ' 23:59:59'])
-            ->groupBy('categoria')
-            ->get();
+            ->groupBy('categoria')->get();
 
-        // 5. Movimientos por día de la semana
         $porDiaSemana = CajaMovimiento::select(
             DB::raw('DAYOFWEEK(created_at) as dia_numero'),
             DB::raw('DAYNAME(created_at) as dia'),
             DB::raw('SUM(CASE WHEN tipo = "ingreso" THEN monto ELSE 0 END) as ingresos'),
             DB::raw('SUM(CASE WHEN tipo = "egreso" THEN monto ELSE 0 END) as egresos')
         )
-            ->when($empresaId, function ($q) use ($empresaId, $sucursalId) {
-                $q->whereHas('cajaApertura', function ($sub) use ($empresaId, $sucursalId) {
-                    $sub->whereHas('caja', function ($c) use ($empresaId, $sucursalId) {
-                        $c->where('empresa_id', $empresaId);
-                        if ($sucursalId) {
-                            $c->where('sucursal_id', $sucursalId);
-                        }
-                    });
-                });
-            })
+            ->where($baseQuery)
             ->whereBetween('created_at', [$fechaInicio . ' 00:00:00', $fechaFin . ' 23:59:59'])
-            ->groupBy('dia_numero', 'dia')
-            ->orderBy('dia_numero')
-            ->get();
+            ->groupBy('dia_numero', 'dia')->orderBy('dia_numero')->get();
 
         return [
             'evolucion_diaria' => $evolucionDiaria,
@@ -198,47 +172,31 @@ class ReporteCajaController extends Controller
         ];
     }
 
-    /**
-     * Obtener resumen general
-     */
-    private function getResumenGeneral($empresaId, $sucursalId, $fechaInicio, $fechaFin)
+    private function getResumenGeneral($empresaId, $sucursalId, $fechaInicio, $fechaFin, $cajaAperturaIds)
     {
+        $baseQuery = function ($q) use ($cajaAperturaIds) {
+            if (!empty($cajaAperturaIds)) {
+                $q->whereIn('caja_apertura_id', $cajaAperturaIds);
+            }
+        };
+
         $totales = CajaMovimiento::select(
             DB::raw('SUM(CASE WHEN tipo = "ingreso" THEN monto ELSE 0 END) as total_ingresos'),
             DB::raw('SUM(CASE WHEN tipo = "egreso" THEN monto ELSE 0 END) as total_egresos'),
             DB::raw('COUNT(CASE WHEN tipo = "ingreso" THEN 1 END) as num_ingresos'),
             DB::raw('COUNT(CASE WHEN tipo = "egreso" THEN 1 END) as num_egresos')
         )
-            ->when($empresaId, function ($q) use ($empresaId, $sucursalId) {
-                $q->whereHas('cajaApertura', function ($sub) use ($empresaId, $sucursalId) {
-                    $sub->whereHas('caja', function ($c) use ($empresaId, $sucursalId) {
-                        $c->where('empresa_id', $empresaId);
-                        if ($sucursalId) {
-                            $c->where('sucursal_id', $sucursalId);
-                        }
-                    });
-                });
-            })
+            ->where($baseQuery)
             ->whereBetween('created_at', [$fechaInicio . ' 00:00:00', $fechaFin . ' 23:59:59'])
             ->first();
 
-        // Comparativa con mes anterior
         $fechaInicioAnterior = \Carbon\Carbon::parse($fechaInicio)->subMonth();
         $fechaFinAnterior = \Carbon\Carbon::parse($fechaFin)->subMonth();
 
         $totalesAnterior = CajaMovimiento::select(
             DB::raw('SUM(CASE WHEN tipo = "ingreso" THEN monto ELSE 0 END) as total_ingresos')
         )
-            ->when($empresaId, function ($q) use ($empresaId, $sucursalId) {
-                $q->whereHas('cajaApertura', function ($sub) use ($empresaId, $sucursalId) {
-                    $sub->whereHas('caja', function ($c) use ($empresaId, $sucursalId) {
-                        $c->where('empresa_id', $empresaId);
-                        if ($sucursalId) {
-                            $c->where('sucursal_id', $sucursalId);
-                        }
-                    });
-                });
-            })
+            ->where($baseQuery)
             ->whereBetween('created_at', [$fechaInicioAnterior . ' 00:00:00', $fechaFinAnterior . ' 23:59:59'])
             ->first();
 
@@ -249,92 +207,52 @@ class ReporteCajaController extends Controller
         return [
             'total_ingresos' => $ingresos,
             'total_egresos' => $totales->total_egresos ?? 0,
-            'saldo_neto' => ($totales->total_ingresos ?? 0) - ($totales->total_egresos ?? 0),
+            'saldo_neto' => $ingresos - ($totales->total_egresos ?? 0),
             'num_ingresos' => $totales->num_ingresos ?? 0,
             'num_egresos' => $totales->num_egresos ?? 0,
-            'promedio_ingreso' => ($totales->num_ingresos ?? 0) > 0 ? ($totales->total_ingresos ?? 0) / ($totales->num_ingresos ?? 0) : 0,
-            'promedio_egreso' => ($totales->num_egresos ?? 0) > 0 ? ($totales->total_egresos ?? 0) / ($totales->num_egresos ?? 0) : 0,
             'variacion' => $variacion,
-            'tendencia' => $variacion > 0 ? 'up' : ($variacion < 0 ? 'down' : 'stable')
         ];
     }
 
-    /**
-     * Obtener top movimientos
-     */
-    private function getTopMovimientos($empresaId, $sucursalId, $fechaInicio, $fechaFin)
+    private function getTopMovimientos($empresaId, $sucursalId, $fechaInicio, $fechaFin, $cajaAperturaIds)
     {
+        $baseQuery = function ($q) use ($cajaAperturaIds) {
+            if (!empty($cajaAperturaIds)) {
+                $q->whereIn('caja_apertura_id', $cajaAperturaIds);
+            }
+        };
+
         $topIngresos = CajaMovimiento::with(['cajaApertura.caja', 'usuario'])
             ->where('tipo', 'ingreso')
-            ->when($empresaId, function ($q) use ($empresaId, $sucursalId) {
-                $q->whereHas('cajaApertura', function ($sub) use ($empresaId, $sucursalId) {
-                    $sub->whereHas('caja', function ($c) use ($empresaId, $sucursalId) {
-                        $c->where('empresa_id', $empresaId);
-                        if ($sucursalId) {
-                            $c->where('sucursal_id', $sucursalId);
-                        }
-                    });
-                });
-            })
+            ->where($baseQuery)
             ->whereBetween('created_at', [$fechaInicio . ' 00:00:00', $fechaFin . ' 23:59:59'])
-            ->orderBy('monto', 'desc')
-            ->limit(5)
-            ->get();
+            ->orderBy('monto', 'desc')->limit(5)->get();
 
         $topEgresos = CajaMovimiento::with(['cajaApertura.caja', 'usuario'])
             ->where('tipo', 'egreso')
-            ->when($empresaId, function ($q) use ($empresaId, $sucursalId) {
-                $q->whereHas('cajaApertura', function ($sub) use ($empresaId, $sucursalId) {
-                    $sub->whereHas('caja', function ($c) use ($empresaId, $sucursalId) {
-                        $c->where('empresa_id', $empresaId);
-                        if ($sucursalId) {
-                            $c->where('sucursal_id', $sucursalId);
-                        }
-                    });
-                });
-            })
+            ->where($baseQuery)
             ->whereBetween('created_at', [$fechaInicio . ' 00:00:00', $fechaFin . ' 23:59:59'])
-            ->orderBy('monto', 'desc')
-            ->limit(5)
-            ->get();
+            ->orderBy('monto', 'desc')->limit(5)->get();
 
-        return [
-            'ingresos' => $topIngresos,
-            'egresos' => $topEgresos
-        ];
+        return ['ingresos' => $topIngresos, 'egresos' => $topEgresos];
     }
 
-    /**
-     * Exportar reporte a Excel
-     */
+    private function getMovimientosRecientes($empresaId, $sucursalId, $fechaInicio, $fechaFin, $cajaAperturaIds)
+    {
+        $baseQuery = function ($q) use ($cajaAperturaIds) {
+            if (!empty($cajaAperturaIds)) {
+                $q->whereIn('caja_apertura_id', $cajaAperturaIds);
+            }
+        };
+
+        return CajaMovimiento::with(['cajaApertura.caja', 'usuario'])
+            ->where($baseQuery)
+            ->whereBetween('created_at', [$fechaInicio . ' 00:00:00', $fechaFin . ' 23:59:59'])
+            ->orderBy('created_at', 'desc')->limit(10)->get();
+    }
+
     public function exportar(Request $request)
     {
-        // Implementar exportación a Excel si es necesario
-    }
-    // En app/Http/Controllers/ReporteCajaController.php
-// Agregar este método después de getTopMovimientos() o antes del dashboard()
-
-    /**
-     * Obtener movimientos recientes
-     */
-    private function getMovimientosRecientes($empresaId, $sucursalId, $fechaInicio, $fechaFin)
-    {
-        $movimientos = CajaMovimiento::with(['cajaApertura.caja', 'usuario'])
-            ->when($empresaId, function ($q) use ($empresaId, $sucursalId) {
-                $q->whereHas('cajaApertura', function ($sub) use ($empresaId, $sucursalId) {
-                    $sub->whereHas('caja', function ($c) use ($empresaId, $sucursalId) {
-                        $c->where('empresa_id', $empresaId);
-                        if ($sucursalId) {
-                            $c->where('sucursal_id', $sucursalId);
-                        }
-                    });
-                });
-            })
-            ->whereBetween('created_at', [$fechaInicio . ' 00:00:00', $fechaFin . ' 23:59:59'])
-            ->orderBy('created_at', 'desc')
-            ->limit(10)
-            ->get();
-
-        return $movimientos;
+        // Implementar si es necesario
     }
 }

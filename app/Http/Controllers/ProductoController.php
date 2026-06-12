@@ -177,7 +177,7 @@ class ProductoController extends Controller
             'stock_maximo' => 'required|numeric|min:0|gt:stock_minimo',
             'control_inventario' => 'sometimes|boolean',
             'activo' => 'sometimes|boolean',
-            'proveedores' => 'nullable|array',
+            'proveedors' => 'nullable|array',
             'insumos' => 'nullable|array',
             'imagenes' => 'nullable|array',
             'imagenes.*' => 'image|mimes:jpeg,png,jpg,gif,webp|max:2048'
@@ -399,37 +399,49 @@ class ProductoController extends Controller
     }
     public function update(Request $request, Producto $producto)
     {
-
         $this->verificarEmpresa($producto);
 
         // Log de inicio
         Log::info('=== INICIO UPDATE PRODUCTO ===', ['producto_id' => $producto->id]);
-        Log::info('Datos recibidos:', $request->all());
+        Log::info('Datos recibidos:', $request->except(['_token', '_method']));
         Log::info('Archivos recibidos - nuevas_imagenes:', [
             'has_file' => $request->hasFile('nuevas_imagenes'),
             'count' => $request->hasFile('nuevas_imagenes') ? count($request->file('nuevas_imagenes')) : 0
         ]);
 
+        // Validación - SKU y código de barras NO se incluyen porque no se modifican
         $validated = $request->validate([
             'categoria_id' => 'nullable|exists:categorias,id',
-            'codigo_barras' => 'nullable|string|max:100',
-            'sku' => 'nullable|string|max:50|unique:productos,sku,' . $producto->id,
             'nombre' => 'required|string|max:255',
             'descripcion' => 'nullable|string',
             'costo_compra' => 'required|numeric|min:0',
             'precio_venta' => 'required|numeric|min:0',
             'stock' => 'nullable|numeric|min:0',
             'stock_minimo' => 'required|numeric|min:0',
-            'stock_maximo' => 'required|numeric|min:0',
+            'stock_maximo' => 'required|numeric|min:0|gte:stock_minimo',
             'control_inventario' => 'boolean',
-            'proveedores' => 'array',
-            'insumos' => 'array',
+            'activo' => 'boolean',
+            'proveedors' => 'nullable|array',
+            'proveedors.*' => 'exists:proveedors,id',
+            'insumos' => 'nullable|array',
             'imagenes_existentes' => 'nullable|string',
             'nuevas_imagenes' => 'nullable|array',
-            'nuevas_imagenes.*' => 'image|mimes:jpeg,png,jpg,gif,webp|max:2048'
+            'nuevas_imagenes.*' => 'image|mimes:jpeg,png,jpg,gif,webp|max:2048',
+            'relacionados' => 'nullable|array',
+            'relacionados.*' => 'exists:productos,id',
+            'precio_compra' => 'nullable|array',
+            'tiempo_entrega' => 'nullable|array',
+        ], [
+            'nombre.required' => 'El nombre del producto es obligatorio.',
+            'costo_compra.required' => 'El costo de compra es obligatorio.',
+            'precio_venta.required' => 'El precio de venta es obligatorio.',
+            'stock_maximo.gte' => 'El stock máximo debe ser mayor o igual al stock mínimo.',
+            'nuevas_imagenes.*.image' => 'Los archivos deben ser imágenes válidas.',
+            'nuevas_imagenes.*.mimes' => 'Formatos permitidos: JPG, PNG, GIF, WEBP.',
+            'nuevas_imagenes.*.max' => 'Cada imagen no debe superar los 2MB.',
         ]);
 
-        Log::info('Validación pasada');
+        Log::info('Validación pasada exitosamente');
 
         DB::beginTransaction();
         try {
@@ -437,10 +449,9 @@ class ProductoController extends Controller
             $newStock = $request->has('stock') ? $request->stock : $oldStock;
 
             // ===== 1. ACTUALIZAR DATOS BÁSICOS =====
+            // SKU y código de barras NO se modifican, se mantienen los originales
             $producto->update([
                 'categoria_id' => $validated['categoria_id'] ?? null,
-                'codigo_barras' => $validated['codigo_barras'] ?? null,
-                'sku' => $validated['sku'] ?? $producto->sku,
                 'nombre' => $validated['nombre'],
                 'descripcion' => $validated['descripcion'] ?? null,
                 'costo_compra' => $validated['costo_compra'],
@@ -449,19 +460,28 @@ class ProductoController extends Controller
                 'stock_minimo' => $validated['stock_minimo'],
                 'stock_maximo' => $validated['stock_maximo'],
                 'control_inventario' => $request->has('control_inventario'),
+                'activo' => $request->has('activo'),
+                // codigo_barras y sku NO se actualizan
             ]);
 
-            Log::info('Producto actualizado');
+            Log::info('Producto actualizado correctamente', [
+                'producto_id' => $producto->id,
+                'nombre' => $producto->nombre,
+                'sku_mantiene' => $producto->sku,
+                'codigo_barras_mantiene' => $producto->codigo_barras
+            ]);
 
             // ===== 2. MANEJAR IMÁGENES =====
             $idsAMantener = [];
             if ($request->filled('imagenes_existentes')) {
                 $idsAMantener = explode(',', $request->imagenes_existentes);
-                $idsAMantener = array_filter($idsAMantener);
-                Log::info('IDs a mantener:', $idsAMantener);
+                $idsAMantener = array_filter($idsAMantener, function ($id) {
+                    return is_numeric($id) && $id > 0;
+                });
+                Log::info('IDs de imágenes a mantener:', ['ids' => $idsAMantener]);
             }
 
-            // Eliminar imágenes que no están en la lista
+            // Eliminar imágenes que NO están en la lista de mantener
             $imagenesAEliminar = $producto->imagenes()
                 ->when(!empty($idsAMantener), function ($query) use ($idsAMantener) {
                     return $query->whereNotIn('id', $idsAMantener);
@@ -471,13 +491,15 @@ class ProductoController extends Controller
             Log::info('Imágenes a eliminar:', ['count' => $imagenesAEliminar->count()]);
 
             foreach ($imagenesAEliminar as $imagen) {
-                Log::info('Eliminando imagen:', ['id' => $imagen->id, 'path' => $imagen->imagen]);
+                Log::info('Eliminando imagen:', ['id' => $imagen->id, 'path' => $imagen->imagen ?? $imagen->url]);
 
-                if (Storage::disk('public')->exists($imagen->imagen)) {
-                    Storage::disk('public')->delete($imagen->imagen);
-                    Log::info('Archivo eliminado');
+                // Intentar eliminar archivo físico
+                $path = $imagen->imagen ?? $imagen->url ?? null;
+                if ($path && Storage::disk('public')->exists($path)) {
+                    Storage::disk('public')->delete($path);
+                    Log::info('Archivo físico eliminado:', ['path' => $path]);
                 } else {
-                    Log::warning('Archivo no encontrado:', ['path' => $imagen->imagen]);
+                    Log::warning('Archivo no encontrado en storage:', ['path' => $path]);
                 }
                 $imagen->delete();
             }
@@ -487,39 +509,51 @@ class ProductoController extends Controller
                 $imagenesActuales = $producto->imagenes()->count();
                 $nuevasImagenes = count($request->file('nuevas_imagenes'));
 
-                Log::info('Agregando nuevas imágenes:', ['actuales' => $imagenesActuales, 'nuevas' => $nuevasImagenes]);
+                Log::info('Procesando nuevas imágenes:', [
+                    'actuales' => $imagenesActuales,
+                    'nuevas' => $nuevasImagenes
+                ]);
 
+                // Validar límite de 3 imágenes
                 if ($imagenesActuales + $nuevasImagenes > 3) {
-                    throw new \Exception('No puedes agregar más de 3 imágenes en total.');
+                    throw new \Exception('No puedes tener más de 3 imágenes en total. Actualmente tienes ' . $imagenesActuales . ' y estás intentando agregar ' . $nuevasImagenes . '.');
                 }
 
+                // Crear carpeta para el producto
                 $folderName = preg_replace('/[^a-zA-Z0-9]/', '_', strtolower($producto->nombre));
                 $folderPath = "empresas/{$producto->empresa_id}/productos/{$folderName}_{$producto->id}";
 
                 $ordenActual = $producto->imagenes()->max('orden') ?? -1;
-                $ordenActual++;
-                $esPrincipal = $producto->imagenes()->count() === 0;
+                $esPrincipal = $imagenesActuales === 0; // Primera imagen será principal
 
                 foreach ($request->file('nuevas_imagenes') as $index => $file) {
                     $extension = $file->getClientOriginalExtension();
                     $fileName = time() . '_' . uniqid() . '_' . ($index + 1) . '.' . $extension;
                     $path = $file->storeAs($folderPath, $fileName, 'public');
 
-                    Log::info('Imagen guardada:', ['path' => $path]);
+                    Log::info('Nueva imagen guardada:', [
+                        'path' => $path,
+                        'orden' => $ordenActual + $index + 1,
+                        'principal' => $esPrincipal && $index === 0
+                    ]);
 
                     ProductoImagen::create([
                         'producto_id' => $producto->id,
                         'imagen' => $path,
-                        'orden' => $ordenActual + $index,
+                        'url' => Storage::url($path),
+                        'orden' => $ordenActual + $index + 1,
                         'principal' => $esPrincipal && $index === 0,
                     ]);
                 }
             }
 
-            // ===== 3. ACTUALIZAR PROVEEDORES =====
+            // ===== 3. SINCRONIZAR PROVEEDORES =====
             if ($request->has('proveedores') && !empty($request->proveedores)) {
                 $proveedoresData = [];
                 foreach ($request->proveedores as $proveedorId) {
+                    if (empty($proveedorId))
+                        continue;
+
                     $precioCompra = $request->input("precio_compra.{$proveedorId}", $validated['costo_compra']);
                     $tiempoEntrega = $request->input("tiempo_entrega.{$proveedorId}", 1);
                     $proveedoresData[$proveedorId] = [
@@ -532,10 +566,10 @@ class ProductoController extends Controller
                 Log::info('Proveedores sincronizados:', ['count' => count($proveedoresData)]);
             } else {
                 $producto->proveedores()->sync([]);
-                Log::info('Proveedores eliminados');
+                Log::info('Proveedores eliminados (sin proveedores seleccionados)');
             }
 
-            // ===== 4. ACTUALIZAR INSUMOS =====
+            // ===== 4. SINCRONIZAR INSUMOS =====
             if ($request->has('insumos') && !empty($request->insumos)) {
                 $insumosSync = [];
                 foreach ($request->insumos as $insumoId => $insumoData) {
@@ -550,100 +584,77 @@ class ProductoController extends Controller
                 Log::info('Insumos sincronizados:', ['count' => count($insumosSync)]);
             } else {
                 $producto->insumos()->sync([]);
-                Log::info('Insumos eliminados');
+                Log::info('Insumos eliminados (sin insumos seleccionados)');
             }
 
-            // ===== 5. REGISTRAR MOVIMIENTO DE STOCK =====
+            // ===== 5. REGISTRAR MOVIMIENTO DE STOCK SI CAMBIÓ =====
             if ($request->has('stock') && $newStock != $oldStock) {
                 $diferencia = $newStock - $oldStock;
                 $tipo = $diferencia > 0 ? 'entrada' : 'salida';
+
                 InventarioMovimiento::create([
                     'empresa_id' => $producto->empresa_id,
+                    'sucursal_id' => session('sucursal_activa_id'),
                     'producto_id' => $producto->id,
                     'user_id' => auth()->id(),
                     'tipo' => $tipo,
                     'motivo' => 'ajuste_inventario',
                     'cantidad' => abs($diferencia),
+                    'stock_anterior' => $oldStock,
+                    'stock_nuevo' => $newStock,
                     'costo_unitario' => $validated['costo_compra'],
                     'costo_total' => abs($diferencia) * $validated['costo_compra'],
                     'observacion' => 'Ajuste de stock al editar producto',
                 ]);
-                Log::info('Movimiento de stock registrado', ['diferencia' => $diferencia, 'tipo' => $tipo]);
+
+                Log::info('Movimiento de stock registrado', [
+                    'tipo' => $tipo,
+                    'diferencia' => $diferencia,
+                    'stock_anterior' => $oldStock,
+                    'stock_nuevo' => $newStock
+                ]);
             }
 
-            // ===== 6. ACTUALIZAR PRODUCTOS RELACIONADOS =====
+            // ===== 6. SINCRONIZAR PRODUCTOS RELACIONADOS =====
             if ($request->has('relacionados')) {
-                $relacionadosIds = array_filter($request->relacionados);
+                $relacionadosIds = array_filter($request->relacionados, function ($id) {
+                    return !empty($id) && is_numeric($id);
+                });
+
                 if (count($relacionadosIds) > 3) {
-                    throw new \Exception('Máximo 3 productos relacionados');
+                    throw new \Exception('Máximo 3 productos relacionados permitidos.');
                 }
+
+                // No permitir relacionarse consigo mismo
+                $relacionadosIds = array_filter($relacionadosIds, function ($id) use ($producto) {
+                    return $id != $producto->id;
+                });
+
                 $producto->syncRelacionados($relacionadosIds);
-                Log::info('Productos relacionados actualizados', $relacionadosIds);
+                Log::info('Productos relacionados actualizados:', ['ids' => $relacionadosIds]);
+            } else {
+                $producto->syncRelacionados([]);
+                Log::info('Productos relacionados eliminados');
             }
 
             DB::commit();
             Log::info('=== TRANSACCIÓN COMPLETADA EXITOSAMENTE ===');
 
-            return redirect()->route('productos.index')
-                ->with('success', 'Producto "' . $producto->nombre . '" actualizado correctamente.');
+            return redirect()
+                ->route('productos.index')
+                ->with('success', 'Producto "' . $producto->fresh()->nombre . '" actualizado correctamente.');
 
         } catch (\Exception $e) {
             DB::rollBack();
-            Log::error('=== ERROR EN UPDATE ===');
+            Log::error('=== ERROR EN UPDATE PRODUCTO ===');
             Log::error('Mensaje: ' . $e->getMessage());
+            Log::error('Línea: ' . $e->getLine());
+            Log::error('Archivo: ' . $e->getFile());
             Log::error('Stack trace: ' . $e->getTraceAsString());
 
             return back()
                 ->withInput()
                 ->with('error', 'Error al actualizar el producto: ' . $e->getMessage());
-        }
-    }
-
-    /**
-     * Eliminar producto (desactivar)
-     */
-    public function destroy(Producto $producto)
-    {
-        $this->verificarEmpresa($producto);
-
-        DB::beginTransaction();
-        try {
-            $nombre = $producto->nombre;
-
-            // Solo desactivar el producto, no eliminar físicamente
-            $producto->update(['activo' => false]);
-
-            DB::commit();
-
-            return redirect()->route('productos.index')
-                ->with('success', 'Producto "' . $nombre . '" desactivado correctamente.');
-
-        } catch (\Exception $e) {
-            DB::rollBack();
-            Log::error('Error al desactivar producto: ' . $e->getMessage());
-            return back()->with('error', 'Error al desactivar el producto. Intente nuevamente.');
-        }
-    }
-
-    /**
-     * Activar/Desactivar producto
-     */
-    public function toggleActivo(Producto $producto)
-    {
-        $this->verificarEmpresa($producto);
-
-        DB::beginTransaction();
-        try {
-            $producto->update(['activo' => !$producto->activo]);
-            DB::commit();
-
-            $estado = $producto->activo ? 'activado' : 'desactivado';
-            return back()->with('success', 'Producto "' . $producto->nombre . '" ' . $estado . ' correctamente.');
-
-        } catch (\Exception $e) {
-            DB::rollBack();
-            Log::error('Error al cambiar estado de producto: ' . $e->getMessage());
-            return back()->with('error', 'Error al cambiar el estado del producto.');
         }
     }
 
@@ -944,6 +955,122 @@ class ProductoController extends Controller
                 'success' => false,
                 'message' => 'Error al generar SKU: ' . $e->getMessage()
             ], 500);
+        }
+    }
+    /**
+     * Reactivar un producto desactivado
+     */
+    public function reactivar($id)
+    {
+        // Buscar producto sin withTrashed() ya que no usas SoftDeletes
+        $producto = Producto::find($id);
+
+        if (!$producto) {
+            if (request()->ajax() || request()->expectsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Producto no encontrado'
+                ], 404);
+            }
+            return redirect()->back()->with('error', 'Producto no encontrado');
+        }
+
+        // Verificar permisos
+        if (!auth()->user()->can('editar_productos') && !auth()->user()->hasRole('Super Admin')) {
+            if (request()->ajax() || request()->expectsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No tienes permisos para reactivar este producto'
+                ], 403);
+            }
+            return redirect()->back()->with('error', 'No tienes permisos para reactivar este producto');
+        }
+
+        // Reactivar el producto (cambiar campo activo a true)
+        $producto->activo = true;
+        $producto->save();
+
+        // Registrar en el log
+        Log::info('Producto reactivado: ' . $producto->nombre . ' (ID: ' . $producto->id . ') por usuario: ' . auth()->user()->name);
+
+        if (request()->ajax() || request()->expectsJson()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Producto "' . $producto->nombre . '" reactivado exitosamente',
+                'producto' => $producto
+            ]);
+        }
+
+        return redirect()->route('productos.index')
+            ->with('success', 'Producto "' . $producto->nombre . '" reactivado exitosamente');
+    }
+
+    /**
+     * Activar/Desactivar producto (toggle)
+     */
+    public function toggleActivo($id)
+    {
+        // Buscar producto sin withTrashed() ya que no usas SoftDeletes
+        $producto = Producto::find($id);
+
+        if (!$producto) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Producto no encontrado'
+            ], 404);
+        }
+
+        // Verificar permisos
+        if (!auth()->user()->can('editar_productos') && !auth()->user()->hasRole('Super Admin')) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No tienes permisos para modificar este producto'
+            ], 403);
+        }
+
+        // Cambiar estado
+        $producto->activo = !$producto->activo;
+        $producto->save();
+
+        $estado = $producto->activo ? 'activado' : 'desactivado';
+
+        // Registrar en el log
+        Log::info('Producto ' . $estado . ': ' . $producto->nombre . ' (ID: ' . $producto->id . ') por usuario: ' . auth()->user()->name);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Producto "' . $producto->nombre . '" ' . $estado . ' exitosamente',
+            'activo' => $producto->activo,
+            'producto' => $producto
+        ]);
+    }
+
+    /**
+     * Eliminar (desactivar) producto
+     */
+    public function destroy(Producto $producto)
+    {
+        $this->verificarEmpresa($producto);
+
+        DB::beginTransaction();
+        try {
+            $nombre = $producto->nombre;
+
+            // Solo desactivar el producto, no eliminar físicamente
+            $producto->update(['activo' => false]);
+
+            DB::commit();
+
+            // Registrar en el log
+            Log::info('Producto desactivado: ' . $nombre . ' (ID: ' . $producto->id . ') por usuario: ' . auth()->user()->name);
+
+            return redirect()->route('productos.index')
+                ->with('success', 'Producto "' . $nombre . '" desactivado correctamente.');
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Error al desactivar producto: ' . $e->getMessage());
+            return back()->with('error', 'Error al desactivar el producto. Intente nuevamente.');
         }
     }
 }

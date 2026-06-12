@@ -63,29 +63,20 @@ class UnidadMedidaController extends Controller
         }
     }
 
-    public function edit(UnidadMedida $unidad_medida) // 👈 Cambiado a singular
+    public function edit(UnidadMedida $unidad) // 👈 Cambiado a singular
     {
-        return view('unidades-medida.edit', compact('unidad_medida'));
+        return view('unidades-medida.edit', compact('unidad'));
     }
 
     public function update(Request $request, UnidadMedida $unidad_medida) // 👈 Cambiado a singular
     {
         $validated = $request->validate([
             'tipo' => 'required|string|max:100',
-            'clave' => [
-                'required',
-                'string',
-                'max:10',
-                Rule::unique('unidad_medidas', 'clave')->ignore($unidad_medida->id),
-            ],
             'nombre' => 'required|string|max:100',
             'simbolo' => 'nullable|string|max:20',
             'descripcion' => 'nullable|string',
-            'activo' => 'boolean',
         ], [
             'tipo.required' => 'El tipo es obligatorio.',
-            'clave.required' => 'La clave es obligatoria.',
-            'clave.unique' => 'Esta clave ya está registrada en otra unidad.',
             'nombre.required' => 'El nombre es obligatorio.',
         ]);
 
@@ -93,11 +84,10 @@ class UnidadMedidaController extends Controller
         try {
             $unidad_medida->update([
                 'tipo' => $validated['tipo'],
-                'clave' => strtoupper($validated['clave']),
                 'nombre' => $validated['nombre'],
                 'simbolo' => $validated['simbolo'] ?? null,
                 'descripcion' => $validated['descripcion'] ?? null,
-                'activo' => $request->has('activo'),
+                'activo' => $request->has('activo') ? 1 : 0,
             ]);
 
             DB::commit();
@@ -110,27 +100,49 @@ class UnidadMedidaController extends Controller
         }
     }
 
-    public function destroy(UnidadMedida $unidad_medida) // 👈 Cambiado a singular
+    public function desactivar($id)
     {
-        if ($unidad_medida->insumos()->count() > 0) {
-            return back()->with('error', 'No se puede eliminar porque tiene insumos asociados.');
-        }
-
         try {
-            $unidad_medida->delete();
-            return redirect()->route('unidades-medida.index')
-                ->with('success', 'Unidad de medida eliminada correctamente.');
+            $unidad = UnidadMedida::findOrFail($id);
+
+            // Verificar permisos
+            if (!auth()->user()->can('eliminar_unidades_medida') && !auth()->user()->hasRole('Super Admin')) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No tienes permisos para desactivar esta unidad'
+                ], 403);
+            }
+
+            // Verificar que no tenga insumos asociados
+            if ($unidad->insumos()->count() > 0) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No se puede desactivar porque tiene ' . $unidad->insumos()->count() . ' insumo(s) asociado(s)'
+                ], 422);
+            }
+
+            $unidad->update(['activo' => false]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Unidad "' . $unidad->nombre . '" desactivada correctamente'
+            ]);
+
         } catch (\Exception $e) {
-            Log::error('Error al eliminar unidad: ' . $e->getMessage());
-            return back()->with('error', 'Error al eliminar la unidad de medida.');
+            Log::error('Error al desactivar unidad: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al desactivar la unidad'
+            ], 500);
         }
     }
-    
+
+
     public function show(UnidadMedida $unidad_medida) // 👈 Cambiado a singular
     {
         return view('unidades-medida.show', compact('unidad_medida'));
     }
-    
+
     public function toggleActivo(UnidadMedida $unidad_medida) // 👈 Cambiado a singular
     {
         try {
@@ -145,6 +157,34 @@ class UnidadMedidaController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Error al cambiar estado: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+    public function reactivar($id)
+    {
+        try {
+            $unidad = UnidadMedida::findOrFail($id);
+
+            // Verificar permisos
+            if (!auth()->user()->can('editar_unidades_medida') && !auth()->user()->hasRole('Super Admin')) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No tienes permisos para reactivar esta unidad'
+                ], 403);
+            }
+
+            $unidad->update(['activo' => true]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Unidad "' . $unidad->nombre . '" reactivada correctamente'
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error al reactivar unidad: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al reactivar la unidad'
             ], 500);
         }
     }

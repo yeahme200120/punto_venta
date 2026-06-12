@@ -3,7 +3,9 @@
 namespace App\Http\Controllers;
 
 use App\Exports\RolesExport;
+use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Maatwebsite\Excel\Facades\Excel;
@@ -31,9 +33,12 @@ class RoleController extends Controller
             $currentUser = auth()->user();
 
             $query = Role::withCount('users')
-                ->with(['permissions', 'users' => function ($query) use ($empresaId) {
-                    $query->where('empresa_id', $empresaId);
-                }]);
+                ->with([
+                    'permissions',
+                    'users' => function ($query) use ($empresaId) {
+                        $query->where('empresa_id', $empresaId);
+                    }
+                ]);
 
             // Si NO es Super Admin, excluir el rol Super Admin
             if (!$currentUser->hasRole('Super Admin')) {
@@ -59,14 +64,14 @@ class RoleController extends Controller
     {
         try {
             $currentUser = auth()->user();
-            
+
             // Si no es Super Admin, no puede crear el rol Super Admin
             $permisos = Permission::all();
-            
+
             if (!$currentUser->hasRole('Super Admin')) {
                 // Excluir permisos de módulos restringidos
                 $excluirModulos = ['empresas', 'licencias', 'notificaciones', 'impresoras'];
-                $permisos = $permisos->filter(function($permiso) use ($excluirModulos) {
+                $permisos = $permisos->filter(function ($permiso) use ($excluirModulos) {
                     foreach ($excluirModulos as $modulo) {
                         if (str_contains($permiso->name, $modulo)) {
                             return false;
@@ -75,7 +80,7 @@ class RoleController extends Controller
                     return true;
                 });
             }
-            
+
             $permisos = $permisos->groupBy(function ($permiso) {
                 $partes = explode('_', $permiso->name);
                 array_shift($partes);
@@ -96,7 +101,7 @@ class RoleController extends Controller
     public function store(Request $request)
     {
         $currentUser = auth()->user();
-        
+
         // Validar que no se pueda crear el rol Super Admin si no es Super Admin
         if (!$currentUser->hasRole('Super Admin') && $request->name === 'Super Admin') {
             return back()->withInput()->with('error', 'No tienes permiso para crear el rol Super Administrador.');
@@ -138,17 +143,20 @@ class RoleController extends Controller
     {
         try {
             $currentUser = auth()->user();
-            
+
             // Si no es Super Admin y el rol es Super Admin, denegar acceso
             if (!$currentUser->hasRole('Super Admin') && $role->name === 'Super Admin') {
                 abort(403, 'No tienes permiso para ver el rol Super Administrador.');
             }
-            
+
             $empresaId = $this->empresaActivaId();
 
-            $role->load(['permissions', 'users' => function ($query) use ($empresaId) {
-                $query->where('empresa_id', $empresaId)->with('sucursal');
-            }]);
+            $role->load([
+                'permissions',
+                'users' => function ($query) use ($empresaId) {
+                    $query->where('empresa_id', $empresaId)->with('sucursal');
+                }
+            ]);
 
             $permisosAgrupados = $role->permissions->groupBy(function ($permiso) {
                 $partes = explode('_', $permiso->name);
@@ -171,18 +179,18 @@ class RoleController extends Controller
     {
         try {
             $currentUser = auth()->user();
-            
+
             // Si no es Super Admin y el rol es Super Admin, denegar acceso
             if (!$currentUser->hasRole('Super Admin') && $role->name === 'Super Admin') {
                 abort(403, 'No tienes permiso para editar el rol Super Administrador.');
             }
-            
+
             $permisos = Permission::all();
-            
+
             if (!$currentUser->hasRole('Super Admin')) {
                 // Excluir permisos de módulos restringidos
                 $excluirModulos = ['empresas', 'licencias', 'notificaciones', 'impresoras'];
-                $permisos = $permisos->filter(function($permiso) use ($excluirModulos) {
+                $permisos = $permisos->filter(function ($permiso) use ($excluirModulos) {
                     foreach ($excluirModulos as $modulo) {
                         if (str_contains($permiso->name, $modulo)) {
                             return false;
@@ -191,7 +199,7 @@ class RoleController extends Controller
                     return true;
                 });
             }
-            
+
             $permisos = $permisos->groupBy(function ($permiso) {
                 $partes = explode('_', $permiso->name);
                 array_shift($partes);
@@ -212,12 +220,12 @@ class RoleController extends Controller
     public function update(Request $request, Role $role)
     {
         $currentUser = auth()->user();
-        
+
         // Si no es Super Admin y el rol es Super Admin, denegar
         if (!$currentUser->hasRole('Super Admin') && $role->name === 'Super Admin') {
             return back()->with('error', 'No tienes permiso para modificar el rol Super Administrador.');
         }
-        
+
         // Validar que no se intente cambiar el nombre a Super Admin
         if (!$currentUser->hasRole('Super Admin') && $request->name === 'Super Admin') {
             return back()->withInput()->with('error', 'No tienes permiso para crear el rol Super Administrador.');
@@ -254,11 +262,11 @@ class RoleController extends Controller
     public function destroy(Role $role)
     {
         $currentUser = auth()->user();
-        
+
         if ($role->name === 'Super Admin') {
             return back()->with('error', 'No se puede eliminar el rol Super Administrador.');
         }
-        
+
         // Si no es Super Admin, no puede eliminar ningún rol (opcional)
         if (!$currentUser->hasRole('Super Admin')) {
             return back()->with('error', 'No tienes permiso para eliminar roles.');
@@ -300,6 +308,161 @@ class RoleController extends Controller
         } catch (\Exception $e) {
             Log::error('Error al exportar roles: ' . $e->getMessage());
             return back()->with('error', 'Error al generar el archivo Excel.');
+        }
+    }
+    public function editPermisos(Role $role)
+    {
+        try {
+            $currentUser = auth()->user();
+
+            // No se puede editar Super Admin si no eres Super Admin
+            if ($role->name === 'Super Admin' && !$currentUser->hasRole('Super Admin')) {
+                abort(403, 'No tienes permiso para editar los permisos del rol Super Administrador.');
+            }
+
+            // Obtener todos los permisos (filtrados por rol del usuario actual)
+            $todosPermisos = Permission::all();
+
+            if (!$currentUser->hasRole('Super Admin')) {
+                $excluirModulos = ['empresas', 'licencias', 'notificaciones', 'impresoras'];
+                $todosPermisos = $todosPermisos->filter(fn($p) => !str_contains($p->name, implode('|', $excluirModulos)));
+            }
+
+            // Permisos actuales del rol
+            $permisosDelRol = $role->permissions->pluck('name')->toArray();
+
+            // Agrupar permisos por módulo
+            $permisosAgrupados = $todosPermisos->groupBy(function ($permiso) {
+                $mapa = [
+                    'dashboard' => 'Dashboard',
+                    'empresas' => 'Empresas',
+                    'licencias' => 'Licencias',
+                    'inventario' => 'Inventario',
+                    'compras' => 'Compras',
+                    'proveedores' => 'Proveedores',
+                    'ventas' => 'Ventas',
+                    'facturacion' => 'Facturacion',
+                    'clientes' => 'Clientes',
+                    'cobranza' => 'Cobranza',
+                    'caja' => 'Caja',
+                    'formaspago' => 'FormasPago',
+                    'notificaciones' => 'Notificaciones',
+                    'impresoras' => 'Impresoras',
+                    'ticket' => 'Ticket',
+                    'usuarios' => 'Usuarios',
+                    'roles' => 'Roles',
+                    'reportes' => 'Reportes',
+                    'respaldos' => 'Respaldos',
+                    'insumos' => 'Insumos',
+                    'unidades_medida' => 'UnidadesMedida',
+                ];
+                foreach ($mapa as $clave => $modulo) {
+                    if (str_contains($permiso->name, $clave))
+                        return $modulo;
+                }
+                return 'Otros';
+            })->sortKeys();
+
+            return view('roles.permisos', compact('role', 'permisosAgrupados', 'permisosDelRol'));
+
+        } catch (\Exception $e) {
+            Log::error('Error al cargar permisos del rol: ' . $e->getMessage());
+            return back()->with('error', 'Error al cargar los permisos del rol.');
+        }
+    }
+
+    /**
+     * Actualizar permisos del rol - Expulsa a todos los usuarios con ese rol
+     */
+    public function updatePermisos(Request $request, Role $role)
+    {
+        Log::info('=== INICIO updatePermisos ===');
+        Log::info('Rol ID: ' . $role->id);
+        Log::info('Rol nombre: ' . $role->name);
+        Log::info('Permisos recibidos: ' . json_encode($request->permisos));
+
+        try {
+            $currentUser = auth()->user();
+            Log::info('Usuario actual: ' . ($currentUser ? $currentUser->email : 'No autenticado'));
+
+            // Verificar permisos para editar Super Admin
+            if ($role->name === 'Super Admin' && !$currentUser->hasRole('Super Admin')) {
+                Log::warning('Intento de editar Super Admin sin permisos');
+                return redirect()->route('roles.index')
+                    ->with('swal_error', 'No tienes permiso para modificar los permisos del rol Super Administrador.');
+            }
+
+            // Obtener permisos a asignar
+            $permisosAsignar = $request->permisos ?? [];
+            Log::info('Permisos a asignar (sin filtrar): ' . json_encode($permisosAsignar));
+
+            // Filtrar permisos no permitidos (si no es Super Admin)
+            if (!$currentUser->hasRole('Super Admin')) {
+                $excluirModulos = ['empresas', 'licencias', 'notificaciones', 'impresoras'];
+                $permisosAsignar = array_filter($permisosAsignar, function ($permiso) use ($excluirModulos) {
+                    foreach ($excluirModulos as $modulo) {
+                        if (str_contains($permiso, $modulo))
+                            return false;
+                    }
+                    return true;
+                });
+                Log::info('Permisos a asignar (después de filtrar): ' . json_encode($permisosAsignar));
+            }
+
+            // Guardar nombre del rol para mensaje
+            $nombreRol = $role->name;
+
+            // Asignar permisos al rol
+            Log::info('Asignando permisos al rol...');
+            $role->syncPermissions($permisosAsignar);
+            Log::info('Permisos asignados correctamente');
+
+            // Limpiar caché de permisos
+            Log::info('Limpiando caché de permisos...');
+            app()->make(\Spatie\Permission\PermissionRegistrar::class)->forgetCachedPermissions();
+            Cache::forget('spatie.permission.cache');
+            Log::info('Caché limpiada');
+
+            // 🔥 EXPULSAR A TODOS LOS USUARIOS QUE TIENEN ESTE ROL
+            Log::info('Buscando usuarios con rol: ' . $nombreRol);
+            $users = User::role($nombreRol)->get();
+            Log::info('Usuarios encontrados: ' . $users->count());
+            $expulsados = 0;
+
+            foreach ($users as $user) {
+                Log::info('Procesando usuario: ' . $user->email . ' (ID: ' . $user->id . ')');
+                if (config('session.driver') === 'database') {
+                    $deleted = DB::table('sessions')->where('user_id', $user->id)->delete();
+                    Log::info('Sesiones eliminadas para usuario ' . $user->id . ': ' . $deleted);
+                    $expulsados++;
+                } else {
+                    Log::info('Driver de sesión no es database, no se puede expulsar');
+                }
+            }
+
+            // Si el usuario actual tiene este rol, cerrar su sesión también
+            if (auth()->user()->hasRole($nombreRol)) {
+                Log::info('El usuario actual tiene el rol, cerrando sesión');
+                auth()->logout();
+
+                return redirect()->route('login')
+                    ->with('swal_info', "Los permisos del rol '{$nombreRol}' han cambiado. Por favor, inicia sesión nuevamente. ({$expulsados} usuarios afectados)");
+            }
+
+            $mensaje = "Permisos del rol '{$nombreRol}' actualizados correctamente.";
+            if ($expulsados > 0) {
+                $mensaje .= " Se han cerrado {$expulsados} sesiones activas de usuarios con este rol.";
+            }
+
+            Log::info('Redirigiendo con mensaje de éxito');
+            return redirect()->route('roles.permisos_rol.edit', $role)
+                ->with('swal_success', $mensaje);
+
+        } catch (\Exception $e) {
+            Log::error('❌ ERROR en updatePermisos: ' . $e->getMessage());
+            Log::error('Stack trace: ' . $e->getTraceAsString());
+            return redirect()->route('roles.index')
+                ->with('swal_error', 'Error al actualizar los permisos: ' . $e->getMessage());
         }
     }
 }

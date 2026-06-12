@@ -13,14 +13,45 @@
 @endsection
 
 @section('content')
-    @if(!isset($cajaAbierta) || !$cajaAbierta)
+
+    {{-- ✅ SELECTOR DE CAJA PARA MÚLTIPLES CAJAS --}}
+    @if(isset($cajasActivas) && $cajasActivas->count() > 1)
+        <div class="p-4 mb-4 bg-white border border-indigo-200 shadow-sm rounded-2xl">
+            <div class="flex items-center gap-3">
+                <span class="text-lg">🏦</span>
+                <div class="flex-1">
+                    <p class="text-sm font-semibold text-gray-700">Selecciona la caja para operar:</p>
+                    <select id="cajaActivaSelect"
+                        class="w-full mt-2 px-4 py-2 border rounded-xl focus:ring-2 focus:ring-indigo-500"
+                        onchange="guardarCajaSeleccionada()">
+                        @foreach($cajasActivas as $caja)
+                            <option value="{{ $caja->id }}" {{ $loop->first ? 'selected' : '' }}>
+                                🏦 {{ $caja->caja->nombre }} | 👤 {{ $caja->usuario->name }} | 💰
+                                ${{ number_format($caja->monto_inicial + $caja->total_ingresos - $caja->total_egresos, 2) }}
+                            </option>
+                        @endforeach
+                    </select>
+                </div>
+            </div>
+        </div>
+    @elseif(isset($cajaAbierta) && $cajaAbierta)
+        {{-- ✅ INFO DE CAJA ACTIVA (una sola) --}}
+        <div class="p-3 mb-4 bg-green-50 border border-green-200 rounded-xl">
+            <div class="flex items-center gap-2 text-sm text-green-700">
+                <span>🏦</span>
+                <span class="font-medium">{{ $cajaAbierta->caja->nombre }}</span>
+                <span class="text-green-400">|</span>
+                <span>👤 {{ $cajaAbierta->usuario->name }}</span>
+                <span class="text-green-400">|</span>
+                <span>💰
+                    ${{ number_format($cajaAbierta->monto_inicial + $cajaAbierta->total_ingresos - $cajaAbierta->total_egresos, 2) }}</span>
+            </div>
+        </div>
+    @else
+        {{-- ✅ SIN CAJA ABIERTA (UN SOLO BLOQUE) --}}
         <div class="flex items-center justify-between p-4 mb-4 border-l-4 border-yellow-400 bg-yellow-50 rounded-r-xl">
             <div class="flex items-center gap-3">
-                <svg class="w-8 h-8 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                        d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z">
-                    </path>
-                </svg>
+                <span class="text-2xl">⚠️</span>
                 <div>
                     <p class="font-medium text-yellow-800">No hay una caja abierta</p>
                     <p class="text-sm text-yellow-700">Para realizar ventas, debes abrir una caja primero.</p>
@@ -28,12 +59,11 @@
             </div>
             @can('abrir_caja')
                 <a href="{{ route('cajas.apertura') }}"
-                    class="px-4 py-2 text-sm font-medium text-white transition bg-yellow-500 rounded-lg hover:bg-yellow-600">
-                    🔓 Abrir caja
-                </a>
+                    class="px-4 py-2 text-sm font-medium text-white bg-yellow-500 rounded-lg hover:bg-yellow-600">🔓 Abrir caja</a>
             @endcan
         </div>
     @endif
+
 
     <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {{-- Panel de productos --}}
@@ -463,12 +493,12 @@
 
                 if (!carrito || carrito.length === 0) {
                     container.innerHTML = `<div class="flex flex-col items-center justify-center py-12 text-center">
-                                                                                            <svg class="w-16 h-16 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-1.5 6M17 13l1.5 6M9 21h6M12 18v3"></path>
-                                                                                            </svg>
-                                                                                            <p class="mt-2 text-gray-400">🛒 No hay productos en el carrito</p>
-                                                                                            <p class="text-xs text-gray-400">Selecciona productos para comenzar</p>
-                                                                                        </div>`;
+                                                                                                                                    <svg class="w-16 h-16 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                                                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-1.5 6M17 13l1.5 6M9 21h6M12 18v3"></path>
+                                                                                                                                    </svg>
+                                                                                                                                    <p class="mt-2 text-gray-400">🛒 No hay productos en el carrito</p>
+                                                                                                                                    <p class="text-xs text-gray-400">Selecciona productos para comenzar</p>
+                                                                                                                                </div>`;
                     document.getElementById('subtotal').innerHTML = '$0.00';
                     document.getElementById('iva').innerHTML = '$0.00';
                     document.getElementById('total').innerHTML = '$0.00';
@@ -482,20 +512,20 @@
                     const totalItem = precio * cantidad;
                     subtotal += totalItem;
                     html += `<div class="flex items-center justify-between p-3 transition-all bg-white rounded-lg shadow-sm hover:shadow-md">
-                                                                                            <div class="flex-1">
-                                                                                                <p class="font-medium text-gray-800">${escapeHtml(item.nombre)}</p>
-                                                                                                <div class="flex items-center gap-2 mt-1">
-                                                                                                    <button onclick="actualizarCantidad(${index}, ${cantidad - 1})" class="w-6 h-6 text-gray-600 transition-colors bg-gray-100 rounded-full hover:bg-red-100 hover:text-red-600">-</button>
-                                                                                                    <span class="w-8 text-sm font-medium text-center">${cantidad}</span>
-                                                                                                    <button onclick="actualizarCantidad(${index}, ${cantidad + 1})" class="w-6 h-6 text-gray-600 transition-colors bg-gray-100 rounded-full hover:bg-green-100 hover:text-green-600">+</button>
-                                                                                                    <span class="text-xs text-gray-400">$${precio.toFixed(2)} c/u</span>
-                                                                                                </div>
-                                                                                            </div>
-                                                                                            <div class="text-right">
-                                                                                                <p class="font-semibold text-indigo-600">$${totalItem.toFixed(2)}</p>
-                                                                                                <button onclick="eliminarProducto(${index})" class="text-xs text-red-500 hover:text-red-700">Eliminar</button>
-                                                                                            </div>
-                                                                                        </div>`;
+                                                                                                                                    <div class="flex-1">
+                                                                                                                                        <p class="font-medium text-gray-800">${escapeHtml(item.nombre)}</p>
+                                                                                                                                        <div class="flex items-center gap-2 mt-1">
+                                                                                                                                            <button onclick="actualizarCantidad(${index}, ${cantidad - 1})" class="w-6 h-6 text-gray-600 transition-colors bg-gray-100 rounded-full hover:bg-red-100 hover:text-red-600">-</button>
+                                                                                                                                            <span class="w-8 text-sm font-medium text-center">${cantidad}</span>
+                                                                                                                                            <button onclick="actualizarCantidad(${index}, ${cantidad + 1})" class="w-6 h-6 text-gray-600 transition-colors bg-gray-100 rounded-full hover:bg-green-100 hover:text-green-600">+</button>
+                                                                                                                                            <span class="text-xs text-gray-400">$${precio.toFixed(2)} c/u</span>
+                                                                                                                                        </div>
+                                                                                                                                    </div>
+                                                                                                                                    <div class="text-right">
+                                                                                                                                        <p class="font-semibold text-indigo-600">$${totalItem.toFixed(2)}</p>
+                                                                                                                                        <button onclick="eliminarProducto(${index})" class="text-xs text-red-500 hover:text-red-700">Eliminar</button>
+                                                                                                                                    </div>
+                                                                                                                                </div>`;
                 });
 
                 const subtotalRedondeado = Math.round(subtotal * 100) / 100;
@@ -551,15 +581,15 @@
                     let cambioHtml = '';
                     cambioDistribuido.forEach(item => {
                         cambioHtml += `
-                        <div class="flex items-center justify-between p-2 text-sm bg-white rounded-lg">
-                            <span>💰 ${item.nombre}</span>
-                            <div class="text-right">
-                                <span class="mr-2 text-gray-400 line-through">$${item.monto_original.toFixed(2)}</span>
-                                <span class="font-bold text-green-600">→ $${item.monto_ajustado.toFixed(2)}</span>
-                                <span class="ml-2 text-yellow-600">(Cambio: $${item.cambio.toFixed(2)})</span>
-                            </div>
-                        </div>
-                    `;
+                                                                <div class="flex items-center justify-between p-2 text-sm bg-white rounded-lg">
+                                                                    <span>💰 ${item.nombre}</span>
+                                                                    <div class="text-right">
+                                                                        <span class="mr-2 text-gray-400 line-through">$${item.monto_original.toFixed(2)}</span>
+                                                                        <span class="font-bold text-green-600">→ $${item.monto_ajustado.toFixed(2)}</span>
+                                                                        <span class="ml-2 text-yellow-600">(Cambio: $${item.cambio.toFixed(2)})</span>
+                                                                    </div>
+                                                                </div>
+                                                            `;
                     });
                     cambioDetalle.innerHTML = cambioHtml;
                 } else {
@@ -616,15 +646,37 @@
                 document.getElementById('modalPago').classList.remove('flex');
             }
 
-            async function confirmarVentaContado() {
+           async function confirmarVentaContado() {
     const pagos = [];
     let error = false;
+
+    // ✅ Obtener caja seleccionada
+    const cajaSelect = document.getElementById('cajaActivaSelect');
+    let cajaAperturaId = null;
+    
+    if (cajaSelect) {
+        cajaAperturaId = cajaSelect.value;
+    } else {
+        cajaAperturaId = {{ isset($cajaAbierta) && $cajaAbierta ? $cajaAbierta->id : 'null' }};
+    }
+    
+    console.log('🔑 cajaAperturaId:', cajaAperturaId, '| Tipo:', typeof cajaAperturaId);
+
+    if (!cajaAperturaId || cajaAperturaId === 'null' || cajaAperturaId === null) {
+        Swal.fire({
+            icon: 'error',
+            title: 'Error',
+            text: 'No hay caja seleccionada. Recarga la página.',
+            confirmButtonColor: '#ef4444'
+        });
+        return;
+    }
 
     document.querySelectorAll('.pago-card').forEach(card => {
         const formaPagoId = card.dataset.formaId;
         let monto = parseFloat(card.querySelector('.monto-pago-input').value) || 0;
         monto = Math.round(monto * 100) / 100;
-        const referencia = card.querySelector('.referencia-input').value;
+        const referencia = card.querySelector('.referencia-input')?.value || '';
 
         if (monto > 0) {
             if (!formaPagoId) {
@@ -632,9 +684,9 @@
                 error = true;
                 return;
             }
-            pagos.push({ 
-                forma_pago_id: formaPagoId, 
-                monto: monto, 
+            pagos.push({
+                forma_pago_id: formaPagoId,
+                monto: monto,
                 referencia: referencia || null,
                 nombre: formasPagoData.find(f => f.id == formaPagoId)?.nombre || 'Desconocido'
             });
@@ -658,7 +710,7 @@
             title: '⚠️ Pago insuficiente',
             html: `<div class="text-center">
                 <p class="text-lg font-semibold text-red-700">Faltante: $${faltante.toFixed(2)}</p>
-                <p class="mt-2 text-sm text-gray-500">El total pagado ($${totalPagos.toFixed(2)}) es menor al total de la venta ($${totalVenta.toFixed(2)}).</p>
+                <p class="mt-2 text-sm text-gray-500">Total pagado: $${totalPagos.toFixed(2)} | Total venta: $${totalVenta.toFixed(2)}</p>
             </div>`,
             icon: 'warning',
             confirmButtonText: 'Ajustar pagos',
@@ -667,71 +719,35 @@
         return;
     }
 
-    // Calcular cambio distribuido
     const { cambioDistribuido } = calcularCambioPorMetodo(pagos, totalVenta);
-    
-    // Aplicar cambio a los pagos
+
     let pagosFinales = [...pagos];
     for (let cambio of cambioDistribuido) {
         const index = pagosFinales.findIndex(p => p.forma_pago_id == cambio.forma_pago_id);
-        if (index !== -1) {
-            pagosFinales[index].monto = cambio.monto_ajustado;
-        }
+        if (index !== -1) pagosFinales[index].monto = cambio.monto_ajustado;
     }
     pagosFinales = pagosFinales.filter(p => p.monto > 0);
 
-    // Construir resumen
     let resumenHtml = `
         <div class="text-left">
             <div class="p-4 mb-4 ${totalPagos > totalVenta ? 'bg-green-50' : 'bg-gray-50'} rounded-xl">
-                <div class="flex items-center justify-between mb-2">
-                    <span class="text-gray-600">Subtotal:</span>
-                    <span class="text-xl font-bold text-indigo-600">$${subtotal.toFixed(2)}</span>
-                </div>
-                ${incluirIva ? `
-                <div class="flex items-center justify-between mb-2">
-                    <span class="text-gray-600">IVA (16%):</span>
-                    <span class="text-xl font-bold text-indigo-600">$${iva.toFixed(2)}</span>
-                </div>
-                ` : ''}
-                <div class="flex items-center justify-between pt-2 border-t">
-                    <span class="text-gray-600">Total de la venta:</span>
-                    <span class="text-xl font-bold text-indigo-600">$${totalVenta.toFixed(2)}</span>
-                </div>
-                <div class="flex items-center justify-between mt-2">
-                    <span class="text-gray-600">Total pagado:</span>
-                    <span class="text-xl font-bold text-green-600">$${totalPagos.toFixed(2)}</span>
-                </div>
-                ${cambioDistribuido.length > 0 ? `
-                <div class="pt-2 mt-3 border-t border-green-200">
-                    <p class="mb-2 text-sm font-semibold text-green-700">💰 Cambio a devolver:</p>
-                    ${cambioDistribuido.map(c => `
-                        <div class="flex items-center justify-between text-sm">
-                            <span>${c.nombre}:</span>
-                            <span class="font-bold text-green-600">$${c.cambio.toFixed(2)}</span>
-                        </div>
-                    `).join('')}
-                </div>
-                ` : ''}
+                <div class="flex justify-between mb-2"><span>Subtotal:</span><span class="font-bold">$${subtotal.toFixed(2)}</span></div>
+                ${incluirIva ? `<div class="flex justify-between mb-2"><span>IVA (16%):</span><span class="font-bold">$${iva.toFixed(2)}</span></div>` : ''}
+                <div class="flex justify-between pt-2 border-t"><span>Total:</span><span class="font-bold text-indigo-600">$${totalVenta.toFixed(2)}</span></div>
+                <div class="flex justify-between mt-2"><span>Pagado:</span><span class="font-bold text-green-600">$${totalPagos.toFixed(2)}</span></div>
             </div>
             <div class="space-y-2">
-                <p class="mb-2 text-sm font-semibold text-gray-600">Formas de pago aplicadas:</p>
-                ${pagosFinales.map(pago => `
-                    <div class="flex items-center justify-between p-2 rounded-lg bg-gray-50">
-                        <span>${pago.nombre}</span>
-                        <span class="font-bold text-indigo-600">$${pago.monto.toFixed(2)}</span>
-                    </div>
-                `).join('')}
+                <p class="text-sm font-semibold">Formas de pago:</p>
+                ${pagosFinales.map(p => `<div class="flex justify-between p-2 bg-gray-50 rounded-lg"><span>${p.nombre}</span><span class="font-bold">$${p.monto.toFixed(2)}</span></div>`).join('')}
             </div>
-        </div>
-    `;
+        </div>`;
 
     const confirm = await Swal.fire({
         title: totalPagos > totalVenta ? '💰 Confirmar venta con cambio' : '✅ Confirmar venta',
         html: resumenHtml,
         icon: 'success',
         showCancelButton: true,
-        confirmButtonText: totalPagos > totalVenta ? '✅ Cobrar y dar cambio' : '✅ Cobrar y finalizar',
+        confirmButtonText: '✅ Confirmar',
         cancelButtonText: 'Cancelar',
         confirmButtonColor: '#10b981',
         cancelButtonColor: '#6b7280',
@@ -739,40 +755,29 @@
     });
 
     if (confirm.isConfirmed) {
+        Swal.fire({ title: 'Procesando...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+        
         try {
+            console.log('📤 Enviando venta...', { cajaAperturaId, items: carrito.length, pagos: pagosFinales.length });
+            
             const response = await axios.post('{{ route("ventas.contado.store") }}', {
                 items: carrito,
                 pagos: pagosFinales,
                 incluir_iva: incluirIva,
+                caja_apertura_id: cajaAperturaId,
                 cambio_detalle: cambioDistribuido,
-                observaciones: document.getElementById('observacionesVenta')?.value
+                observaciones: ''
             });
 
+            console.log('📥 Respuesta:', response.data);
+
             if (response.data.success) {
-                Swal.fire({
+                await Swal.fire({
                     title: '🎉 ¡Venta exitosa!',
-                    html: `
-                        <div class="text-center">
-                            <p class="text-2xl font-bold text-gray-800">${response.data.folio}</p>
-                            <div class="p-4 mt-4 bg-gray-50 rounded-xl">
-                                <div class="flex items-center justify-between mb-2">
-                                    <span class="text-gray-500">Total:</span>
-                                    <span class="text-xl font-bold text-indigo-600">$${totalVenta.toFixed(2)}</span>
-                                </div>
-                                ${cambioDistribuido.length > 0 ? `
-                                <div class="pt-2 mt-2 border-t border-green-200">
-                                    <p class="text-sm font-semibold text-green-600">💰 Cambio devuelto:</p>
-                                    ${cambioDistribuido.map(c => `
-                                        <div class="flex items-center justify-between mt-1 text-sm">
-                                            <span>${c.nombre}:</span>
-                                            <span class="font-bold text-green-600">$${c.cambio.toFixed(2)}</span>
-                                        </div>
-                                    `).join('')}
-                                </div>
-                                ` : ''}
-                            </div>
-                        </div>
-                    `,
+                    html: `<div class="text-center">
+                        <p class="text-2xl font-bold">${response.data.folio}</p>
+                        <p class="mt-2">Total: <strong>$${totalVenta.toFixed(2)}</strong></p>
+                    </div>`,
                     icon: 'success',
                     confirmButtonText: '🧾 Imprimir ticket',
                     confirmButtonColor: '#4f46e5',
@@ -788,9 +793,13 @@
                     window.dispatchEvent(new CustomEvent('carrito-actualizado'));
                     cerrarModalPago();
                 });
+            } else {
+                throw new Error(response.data.message || 'Error desconocido');
             }
         } catch (error) {
-            Swal.fire('Error', error.response?.data?.message || 'Error al registrar venta', 'error');
+            console.error('❌ Error:', error);
+            const msg = error.response?.data?.message || error.message || 'Error al registrar venta';
+            Swal.fire('Error', msg, 'error');
         }
     }
 }
@@ -881,24 +890,24 @@
                 const { value: formValues } = await Swal.fire({
                     title: 'Generar Cotización',
                     html: `<div class="text-left">
-                                                                                            <div class="mb-3">
-                                                                                                <label class="block mb-1 text-sm font-medium text-gray-700">Cliente (opcional)</label>
-                                                                                                <select id="clienteCotizacion" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500">
-                                                                                                    <option value="">Cliente mostrador</option>
-                                                                                                    @foreach($clientes as $cliente)
-                                                                                                        <option value="{{ $cliente->id }}">{{ $cliente->nombre }}</option>
-                                                                                                    @endforeach
-                                                                                                </select>
-                                                                                            </div>
-                                                                                            <div class="mb-3">
-                                                                                                <label class="block mb-1 text-sm font-medium text-gray-700">Días de validez</label>
-                                                                                                <input type="number" id="diasValidez" value="7" min="1" max="90" class="w-full px-3 py-2 border border-gray-300 rounded-lg">
-                                                                                            </div>
-                                                                                            <div class="mb-3">
-                                                                                                <label class="block mb-1 text-sm font-medium text-gray-700">Observaciones</label>
-                                                                                                <textarea id="observaciones" rows="2" class="w-full px-3 py-2 border border-gray-300 rounded-lg"></textarea>
-                                                                                            </div>
-                                                                                        </div>`,
+                                                                                                                                    <div class="mb-3">
+                                                                                                                                        <label class="block mb-1 text-sm font-medium text-gray-700">Cliente (opcional)</label>
+                                                                                                                                        <select id="clienteCotizacion" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500">
+                                                                                                                                            <option value="">Cliente mostrador</option>
+                                                                                                                                            @foreach($clientes as $cliente)
+                                                                                                                                                <option value="{{ $cliente->id }}">{{ $cliente->nombre }}</option>
+                                                                                                                                            @endforeach
+                                                                                                                                        </select>
+                                                                                                                                    </div>
+                                                                                                                                    <div class="mb-3">
+                                                                                                                                        <label class="block mb-1 text-sm font-medium text-gray-700">Días de validez</label>
+                                                                                                                                        <input type="number" id="diasValidez" value="7" min="1" max="90" class="w-full px-3 py-2 border border-gray-300 rounded-lg">
+                                                                                                                                    </div>
+                                                                                                                                    <div class="mb-3">
+                                                                                                                                        <label class="block mb-1 text-sm font-medium text-gray-700">Observaciones</label>
+                                                                                                                                        <textarea id="observaciones" rows="2" class="w-full px-3 py-2 border border-gray-300 rounded-lg"></textarea>
+                                                                                                                                    </div>
+                                                                                                                                </div>`,
                     showCancelButton: true,
                     confirmButtonText: '📄 Generar Cotización',
                     cancelButtonText: 'Cancelar',
@@ -1034,6 +1043,14 @@
                 }
 
                 return { cambioDistribuido, sobrante };
+            }
+            // ✅ Guardar caja seleccionada en localStorage
+            function guardarCajaSeleccionada() {
+                const select = document.getElementById('cajaActivaSelect');
+                if (select) {
+                    localStorage.setItem('cajaActivaSeleccionada', select.value);
+                    console.log('🏦 Caja seleccionada:', select.value);
+                }
             }
         </script>
     @endpush

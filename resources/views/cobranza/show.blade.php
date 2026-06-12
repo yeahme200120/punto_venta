@@ -1,285 +1,303 @@
-{{-- resources/views/cobranza/show.blade.php --}}
 @extends('layouts.app')
 
 @section('title', 'Detalle de Crédito')
-@section('page-title', 'Detalle de Crédito')
-@section('breadcrumbs')
-    <li>
-        <span class="text-gray-400">/</span>
-    </li>
-    <li>
-        <a href="{{ route('cobranza.index') }}" class="text-gray-500 transition-colors hover:text-indigo-600">
-            Cobranza
-        </a>
-    </li>
-    <li>
-        <span class="text-gray-400">/</span>
-    </li>
-    <li>
-        <span class="font-medium text-gray-700">Crédito #{{ $credito->id }}</span>
-    </li>
-@endsection
+@section('page-title', 'Crédito #' . $credito->id)
 
 @section('content')
-<div class="space-y-5">
-    {{-- Información del crédito --}}
-    <div class="overflow-hidden bg-white border shadow-sm rounded-2xl">
-        <div class="p-5 border-b bg-gradient-to-r from-indigo-50 to-cyan-50">
-            <div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                <div class="flex items-center gap-4">
-                    <div class="flex items-center justify-center w-12 h-12 bg-indigo-100 rounded-full">
-                        <span class="text-2xl">📋</span>
-                    </div>
-                    <div>
-                        <h2 class="text-xl font-bold text-gray-800">Crédito #{{ $credito->id }}</h2>
-                        <p class="text-sm text-gray-500">Venta: {{ $credito->venta->folio }} | Cliente: {{ $credito->cliente->nombre }}</p>
-                    </div>
-                </div>
-                <div class="flex gap-2">
-                    <a href="{{ route('ventas.pagares', $credito->id) }}" target="_blank" 
-                       class="px-4 py-2 text-indigo-600 border rounded-lg hover:bg-indigo-50">
-                        📄 Imprimir pagarés
-                    </a>
-                    <a href="{{ route('cobranza.index') }}" 
-                       class="px-4 py-2 text-white bg-gray-600 rounded-lg hover:bg-gray-700">
-                        ← Volver
-                    </a>
-                </div>
-            </div>
+    {{-- ✅ SELECTOR DE CAJA (antes del formulario de abono) --}}
+    @if(isset($cajasActivas) && $cajasActivas->count() > 1)
+        <div class="p-3 mb-4 bg-white border border-indigo-200 rounded-xl">
+            <label class="block mb-2 text-sm font-medium">🏦 Selecciona la caja para registrar:</label>
+            <select id="cajaActivaSelect" class="w-full px-3 py-2 border rounded-lg">
+                @foreach($cajasActivas as $caja)
+                    <option value="{{ $caja->id }}">
+                        🏦 {{ $caja->caja->nombre }} | 👤 {{ $caja->usuario->name }} | 💰
+                        ${{ number_format($caja->monto_inicial + $caja->total_ingresos - $caja->total_egresos, 2) }}
+                    </option>
+                @endforeach
+            </select>
         </div>
-
-        <div class="p-5">
-            <div class="grid grid-cols-1 gap-4 mb-6 md:grid-cols-4">
-                <div class="p-3 bg-gray-50 rounded-xl">
-                    <p class="text-xs text-gray-500">Total del crédito</p>
-                    <p class="text-xl font-bold text-indigo-600">${{ number_format($credito->monto_total, 2) }}</p>
-                </div>
-                <div class="p-3 bg-gray-50 rounded-xl">
-                    <p class="text-xs text-gray-500">Monto pagado</p>
-                    <p class="text-xl font-bold text-green-600">${{ number_format($credito->monto_pagado, 2) }}</p>
-                </div>
-                <div class="p-3 bg-gray-50 rounded-xl">
-                    <p class="text-xs text-gray-500">Saldo pendiente</p>
-                    <p class="text-xl font-bold {{ $credito->saldo_pendiente > 0 ? 'text-red-600' : 'text-green-600' }}">
-                        ${{ number_format($credito->saldo_pendiente, 2) }}
-                    </p>
-                </div>
-                <div class="p-3 bg-gray-50 rounded-xl">
-                    <p class="text-xs text-gray-500">Estado</p>
-                    <p class="text-xl font-bold">
-                        @if($credito->estado == 'pagado')
-                            <span class="text-green-600">✅ Pagado</span>
-                        @elseif($credito->estado == 'vencido')
-                            <span class="text-red-600">⏰ Vencido</span>
-                        @else
-                            <span class="text-blue-600">🟢 Activo</span>
-                        @endif
-                    </p>
+    @elseif(isset($cajaAbierta) && $cajaAbierta)
+        <div class="p-3 mb-4 bg-green-50 border border-green-200 rounded-xl">
+            <p class="text-sm text-green-700">
+                🏦 <strong>{{ $cajaAbierta->caja->nombre }}</strong> |
+                👤 {{ $cajaAbierta->usuario->name }} |
+                💰
+                ${{ number_format($cajaAbierta->monto_inicial + $cajaAbierta->total_ingresos - $cajaAbierta->total_egresos, 2) }}
+            </p>
+        </div>
+    @endif
+    <div class="space-y-5">
+        <div class="overflow-hidden bg-white border shadow-sm rounded-2xl">
+            <div class="p-5 border-b bg-gradient-to-r from-indigo-50 to-cyan-50">
+                <div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                    <div>
+                        <h2 class="text-xl font-bold">Crédito #{{ $credito->id }}</h2>
+                        <p class="text-sm text-gray-500">Venta: {{ $credito->venta->folio }} | Cliente:
+                            {{ $credito->cliente->nombre }}
+                        </p>
+                    </div>
+                    <div class="flex gap-2">
+                        @can('ver_cobranza')
+                            <a href="{{ route('ventas.pagares', $credito->id) }}" target="_blank"
+                                class="px-4 py-2 text-indigo-600 border rounded-lg hover:bg-indigo-50">📄 Pagarés</a>
+                        @endcan
+                        <a href="{{ route('cobranza.index') }}"
+                            class="px-4 py-2 text-white bg-gray-600 rounded-lg hover:bg-gray-700">← Volver</a>
+                    </div>
                 </div>
             </div>
 
-            <div class="flex flex-col gap-6 lg:flex-row">
-                {{-- Pagarés --}}
-                <div class="flex-1">
-                    <h3 class="mb-3 text-lg font-semibold text-gray-800">📜 Pagarés</h3>
-                    <div class="space-y-2">
-                        @forelse($credito->pagares as $pagare)
-                            @php
-                                $isVencido = $pagare->fecha_vencimiento->isPast() && $pagare->estado == 'pendiente';
-                                $isPagado = $pagare->estado == 'pagado';
-                            @endphp
-                            <div class="p-3 border rounded-xl {{ $isVencido ? 'bg-red-50 border-red-200' : ($isPagado ? 'bg-green-50 border-green-200' : 'bg-white') }}">
-                                <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                                    <div>
-                                        <div class="flex items-center gap-2">
-                                            <span class="font-mono text-sm font-bold">#{{ $pagare->folio }}</span>
-                                            <span class="px-2 py-0.5 text-xs rounded-full 
-                                                {{ $isPagado ? 'bg-green-100 text-green-700' : ($isVencido ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700') }}">
-                                                {{ $isPagado ? 'Pagado' : ($isVencido ? 'Vencido' : 'Pendiente') }}
-                                            </span>
-                                        </div>
-                                        <div class="flex gap-3 mt-1 text-xs text-gray-500">
-                                            <span>Pago #{{ $pagare->numero_pago }}</span>
-                                            <span>Vence: {{ $pagare->fecha_vencimiento->format('d/m/Y') }}</span>
-                                        </div>
-                                    </div>
-                                    <div class="text-right">
-                                        <p class="text-lg font-bold ${{ $isPagado ? 'text-green-600' : 'text-indigo-600' }}">
-                                            ${{ number_format($pagare->monto, 2) }}
-                                        </p>
-                                        @if(!$isPagado && $credito->estado != 'pagado')
-                                        <button type="button" 
-                                                onclick="pagarPagare({{ $pagare->id }}, '{{ $pagare->folio }}', {{ $pagare->monto }})"
-                                                class="px-3 py-1 text-sm text-white bg-indigo-600 rounded-lg hover:bg-indigo-700">
-                                            Pagar
-                                        </button>
-                                        @endif
-                                    </div>
-                                </div>
-                            </div>
-                        @empty
-                            <p class="py-6 text-center text-gray-400">No hay pagarés registrados</p>
-                        @endforelse
+            <div class="p-5">
+                <div class="grid grid-cols-1 gap-4 mb-6 md:grid-cols-4">
+                    <div class="p-3 bg-gray-50 rounded-xl">
+                        <p class="text-xs text-gray-500">Total</p>
+                        <p class="text-xl font-bold text-indigo-600">${{ number_format($credito->monto_total, 2) }}</p>
+                    </div>
+                    <div class="p-3 bg-gray-50 rounded-xl">
+                        <p class="text-xs text-gray-500">Pagado</p>
+                        <p class="text-xl font-bold text-green-600">${{ number_format($credito->monto_pagado, 2) }}</p>
+                    </div>
+                    <div class="p-3 bg-gray-50 rounded-xl">
+                        <p class="text-xs text-gray-500">Saldo</p>
+                        <p
+                            class="text-xl font-bold {{ $credito->saldo_pendiente > 0 ? 'text-red-600' : 'text-green-600' }}">
+                            ${{ number_format($credito->saldo_pendiente, 2) }}</p>
+                    </div>
+                    <div class="p-3 bg-gray-50 rounded-xl">
+                        <p class="text-xs text-gray-500">Estado</p>
+                        <p class="text-xl font-bold">
+                            {{ $credito->estado == 'pagado' ? '✅ Pagado' : ($credito->estado == 'vencido' ? '⏰ Vencido' : '🟢 Activo') }}
+                        </p>
                     </div>
                 </div>
 
-                {{-- Formulario de abono --}}
-                <div class="w-full lg:w-96">
-                    <div class="sticky top-24">
-                        <div class="p-4 bg-gray-50 rounded-xl">
-                            <h3 class="mb-3 text-lg font-semibold text-gray-800">💰 Registrar abono</h3>
-                            <form action="{{ route('cobranza.abono.store') }}" method="POST" class="space-y-3">
-                                @csrf
-                                <input type="hidden" name="credito_id" value="{{ $credito->id }}">
-                                
-                                <div>
-                                    <label class="block mb-1 text-sm font-medium text-gray-700">Monto sugerido</label>
-                                    <div class="relative">
-                                        <span class="absolute left-3 top-2.5 text-gray-500">$</span>
-                                        <input type="number" id="montoSugerido" class="w-full py-2 pl-8 pr-4 bg-gray-100 border rounded-lg" 
-                                               value="{{ number_format($credito->pagares->where('estado', 'pendiente')->first()->monto ?? $credito->saldo_pendiente, 2) }}" readonly>
+                <div class="flex flex-col gap-6 lg:flex-row">
+                    {{-- Pagarés --}}
+                    <div class="flex-1">
+                        <h3 class="mb-3 text-lg font-semibold">📜 Pagarés</h3>
+                        <div class="space-y-2">
+                            @forelse($credito->pagares as $pagare)
+                                @php $isVencido = $pagare->fecha_vencimiento->isPast() && $pagare->estado == 'pendiente'; @endphp
+                                <div
+                                    class="p-3 border rounded-xl {{ $pagare->estado == 'pagado' ? 'bg-green-50 border-green-200' : ($isVencido ? 'bg-red-50 border-red-200' : 'bg-white') }}">
+                                    <div class="flex items-center justify-between">
+                                        <div>
+                                            <span class="font-mono font-bold">#{{ $pagare->folio }}</span>
+                                            <span class="ml-2 text-xs">Vence:
+                                                {{ $pagare->fecha_vencimiento->format('d/m/Y') }}</span>
+                                        </div>
+                                        <div class="flex items-center gap-2">
+                                            <span class="font-bold">${{ number_format($pagare->monto, 2) }}</span>
+                                            @can('pagar_pagare')
+                                                @if($pagare->estado == 'pendiente')
+                                                    <button
+                                                        onclick="pagarPagare({{ $pagare->id }}, '{{ $pagare->folio }}', {{ $pagare->monto }})"
+                                                        class="px-3 py-1 text-sm text-white bg-indigo-600 rounded-lg hover:bg-indigo-700">Pagar</button>
+                                                @endif
+                                            @endcan
+                                            @can('condonar_adeudo')
+                                                @if($isVencido)
+                                                    <button
+                                                        onclick="condonarPagare({{ $pagare->id }}, '{{ $pagare->folio }}', {{ $pagare->monto }})"
+                                                        class="px-3 py-1 text-sm text-white bg-orange-600 rounded-lg hover:bg-orange-700">Condonar</button>
+                                                @endif
+                                            @endcan
+                                        </div>
                                     </div>
-                                    <p class="mt-1 text-xs text-gray-400">Sugerido: próximo pagaré</p>
                                 </div>
-
-                                <div>
-                                    <label class="block mb-1 text-sm font-medium text-gray-700">Monto a pagar *</label>
-                                    <div class="relative">
-                                        <span class="absolute left-3 top-2.5 text-gray-500">$</span>
-                                        <input type="number" name="monto" id="montoAbono" step="0.01" min="0.01" required
-                                            class="w-full py-2 pl-8 pr-4 border rounded-lg focus:ring-2 focus:ring-indigo-500"
-                                            value="{{ $credito->pagares->where('estado', 'pendiente')->first()->monto ?? $credito->saldo_pendiente }}">
-                                    </div>
-                                </div>
-
-                                <div>
-                                    <label class="block mb-1 text-sm font-medium text-gray-700">Forma de pago *</label>
-                                    <select name="forma_pago" required class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500">
-                                        @foreach($formasPago as $forma)
-                                            <option value="{{ $forma->clave }}">{!! $forma->icono !!} {{ $forma->nombre }}</option>
-                                        @endforeach
-                                    </select>
-                                </div>
-
-                                <div>
-                                    <label class="block mb-1 text-sm font-medium text-gray-700">Referencia</label>
-                                    <input type="text" name="referencia" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500">
-                                </div>
-
-                                <div>
-                                    <label class="block mb-1 text-sm font-medium text-gray-700">Observaciones</label>
-                                    <textarea name="observaciones" rows="2" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500"></textarea>
-                                </div>
-
-                                <button type="submit" class="w-full py-2 text-white transition bg-green-600 rounded-lg hover:bg-green-700">
-                                    💰 Registrar abono
-                                </button>
-                            </form>
+                            @empty
+                                <p class="py-6 text-center text-gray-400">No hay pagarés</p>
+                            @endforelse
                         </div>
                     </div>
-                </div>
-            </div>
 
-            {{-- Historial de pagos --}}
-            <div class="mt-6">
-                <h3 class="mb-3 text-lg font-semibold text-gray-800">📋 Historial de pagos</h3>
-                <div class="overflow-x-auto">
-                    <table class="w-full">
-                        <thead class="bg-gray-50">
-                            <tr>
-                                <th class="px-4 py-2 text-xs text-left">Fecha</th>
-                                <th class="px-4 py-2 text-xs text-right">Monto</th>
-                                <th class="px-4 py-2 text-xs text-center">Tipo</th>
-                                <th class="px-4 py-2 text-xs text-left">Usuario</th>
-                                <th class="px-4 py-2 text-xs text-left">Observaciones</th>
-                            </tr>
-                        </thead>
-                        <tbody class="divide-y">
-                            @forelse($credito->cobranzas as $cobranza)
-                            <tr class="hover:bg-gray-50">
-                                <td class="px-4 py-2 text-sm">{{ $cobranza->fecha_cobro->format('d/m/Y H:i') }}</td>
-                                <td class="px-4 py-2 font-semibold text-right text-green-600">+${{ number_format($cobranza->monto, 2) }}</td>
-                                <td class="px-4 py-2 text-center">
-                                    @if($cobranza->tipo == 'abono')
-                                        <span class="px-2 py-0.5 text-xs bg-blue-100 text-blue-700 rounded-full">Abono</span>
-                                    @else
-                                        <span class="px-2 py-0.5 text-xs bg-green-100 text-green-700 rounded-full">Pago de pagaré</span>
-                                    @endif
-                                </td>
-                                <td class="px-4 py-2 text-sm">{{ $cobranza->usuario->name }}</td>
-                                <td class="px-4 py-2 text-sm text-gray-500">{{ $cobranza->observaciones ?? '-' }}</td>
-                            </tr>
-                            @empty
-                            <tr>
-                                <td colspan="5" class="px-4 py-8 text-center text-gray-400">
-                                    No hay pagos registrados
-                                </td>
-                            </tr>
-                            @endforelse
-                        </tbody>
-                    </table>
+                    {{-- Formulario de abono --}}
+                    @can('registrar_abono')
+                        <div class="w-full lg:w-96">
+                            <div class="sticky p-4 bg-gray-50 rounded-xl top-24">
+                                <h3 class="mb-3 text-lg font-semibold">💰 Registrar abono</h3>
+                                <form id="formAbono" onsubmit="return registrarAbono(event)">
+                                    @csrf
+                                    <input type="hidden" name="credito_id" value="{{ $credito->id }}">
+                                    <div class="space-y-3">
+                                        <div>
+                                            <label class="block mb-1 text-sm font-medium">Monto *</label>
+                                            <input type="number" name="monto" id="montoAbono" step="0.01" min="0.01" required
+                                                class="w-full px-3 py-2 border rounded-lg"
+                                                value="{{ $credito->pagares->where('estado', 'pendiente')->first()->monto ?? $credito->saldo_pendiente }}">
+                                        </div>
+                                        <div>
+                                            <label class="block mb-1 text-sm font-medium">Forma de pago *</label>
+                                            <select name="forma_pago" required class="w-full px-3 py-2 border rounded-lg">
+                                                @foreach($formasPago as $forma)
+                                                    <option value="{{ $forma->clave }}">{{ $forma->nombre }}</option>
+                                                @endforeach
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label class="block mb-1 text-sm font-medium">Referencia</label>
+                                            <input type="text" name="referencia" class="w-full px-3 py-2 border rounded-lg">
+                                        </div>
+                                        <div>
+                                            <label class="block mb-1 text-sm font-medium">Observaciones</label>
+                                            <textarea name="observaciones" rows="2"
+                                                class="w-full px-3 py-2 border rounded-lg"></textarea>
+                                        </div>
+                                        <button type="submit"
+                                            class="w-full py-2 text-white bg-green-600 rounded-lg hover:bg-green-700">💰
+                                            Registrar abono</button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    @endcan
+                </div>
+
+                {{-- Historial de pagos --}}
+                <div class="mt-6">
+                    <h3 class="mb-3 text-lg font-semibold">📋 Historial de pagos</h3>
+                    <div class="overflow-x-auto">
+                        <table class="w-full">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="px-4 py-2 text-xs text-left">Fecha</th>
+                                    <th class="px-4 py-2 text-xs text-right">Monto</th>
+                                    <th class="px-4 py-2 text-xs text-center">Tipo</th>
+                                    <th class="px-4 py-2 text-xs text-left">Usuario</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y">
+                                @forelse($credito->cobranzas as $cobranza)
+                                    <tr class="hover:bg-gray-50">
+                                        <td class="px-4 py-2 text-sm">{{ $cobranza->fecha_cobro->format('d/m/Y H:i') }}</td>
+                                        <td class="px-4 py-2 font-semibold text-right text-green-600">
+                                            +${{ number_format($cobranza->monto, 2) }}</td>
+                                        <td class="px-4 py-2 text-center"><span
+                                                class="px-2 py-0.5 text-xs rounded-full {{ $cobranza->tipo == 'abono' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700' }}">{{ $cobranza->tipo == 'abono' ? 'Abono' : 'Pago' }}</span>
+                                        </td>
+                                        <td class="px-4 py-2 text-sm">{{ $cobranza->usuario->name }}</td>
+                                    </tr>
+                                @empty
+                                    <tr>
+                                        <td colspan="4" class="px-4 py-8 text-center text-gray-400">No hay pagos registrados
+                                        </td>
+                                    </tr>
+                                @endforelse
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
-</div>
 
-<script>
-    const montoSugerido = parseFloat(document.getElementById('montoSugerido')?.value.replace(/,/g, '') || 0);
-    
-    document.getElementById('montoAbono')?.addEventListener('input', function() {
-        if (parseFloat(this.value) > {{ $credito->saldo_pendiente }}) {
-            this.value = {{ $credito->saldo_pendiente }};
+    <script>
+        if (typeof axios === 'undefined') { console.error('Axios no disponible'); }
+        axios.defaults.headers.common['X-CSRF-TOKEN'] = '{{ csrf_token() }}';
+        axios.defaults.headers.common['Accept'] = 'application/json';
+
+        async function registrarAbono(event) {
+            event.preventDefault();
+            const form = document.getElementById('formAbono');
+            const formData = new FormData(form);
+            const data = Object.fromEntries(formData.entries());
+
+            // ✅ Agregar caja seleccionada
+            const cajaSelect = document.getElementById('cajaActivaSelect');
+            if (cajaSelect) data.caja_apertura_id = cajaSelect.value;
+
+            Swal.fire({ title: 'Procesando...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+            try {
+                const res = await axios.post('{{ route("cobranza.abono.store") }}', data);
+                if (res.data?.success) { await Swal.fire({ icon: 'success', title: 'Abono registrado', timer: 2000 }); location.reload(); }
+            } catch (e) {
+                Swal.fire({ icon: 'error', title: 'Error', text: e.response?.data?.message || 'Error', confirmButtonColor: '#ef4444' });
+            }
+            return false;
         }
-    });
 
-    function pagarPagare(id, folio, monto) {
-        Swal.fire({
-            title: 'Pagar pagaré',
-            html: `
-                <div class="text-left">
-                    <p class="mb-3">Pagaré: <strong>${folio}</strong></p>
-                    <p class="mb-3">Monto: <strong>$${monto.toFixed(2)}</strong></p>
-                    <div class="mb-3">
-                        <label class="block mb-1 text-sm font-medium">Forma de pago *</label>
-                        <select id="formaPago" class="w-full px-3 py-2 border rounded-lg">
-                            @foreach($formasPago as $forma)
-                                <option value="{{ $forma->clave }}">{!! $forma->icono !!} {{ $forma->nombre }}</option>
-                            @endforeach
-                        </select>
-                    </div>
-                    <div class="mb-3">
-                        <label class="block mb-1 text-sm font-medium">Referencia</label>
-                        <input type="text" id="referencia" class="w-full px-3 py-2 border rounded-lg">
-                    </div>
-                    <div class="mb-3">
-                        <label class="block mb-1 text-sm font-medium">Observaciones</label>
-                        <textarea id="observaciones" rows="2" class="w-full px-3 py-2 border rounded-lg"></textarea>
-                    </div>
-                </div>
-            `,
-            showCancelButton: true,
-            confirmButtonText: '✅ Pagar',
-            cancelButtonText: 'Cancelar',
-            preConfirm: () => {
-                return {
-                    forma_pago: document.getElementById('formaPago').value,
-                    referencia: document.getElementById('referencia').value,
-                    observaciones: document.getElementById('observaciones').value
-                };
+        async function pagarPagare(id, folio, monto) {
+            @cannot('pagar_pagare')
+            Swal.fire({ icon: 'error', title: 'Acceso denegado', confirmButtonColor: '#ef4444' }); return;
+            @endcannot
+
+            const { value: formValues } = await Swal.fire({
+                title: 'Pagar pagaré',
+                html: `<div class="text-left">
+                            <p>Pagaré: <strong>${folio}</strong></p>
+                            {{-- ✅ MONTO FIJO, NO MODIFICABLE --}}
+                            <p class="text-lg font-bold text-indigo-600">Monto: $${monto.toFixed(2)}</p>
+                            <p class="text-xs text-gray-400">El monto del pagaré no es modificable</p>
+                            <div class="mt-3">
+                                <label class="block mb-1 text-sm">Forma de pago</label>
+                                <select id="fp" class="w-full px-3 py-2 border rounded-lg">
+                                    @foreach($formasPago as $f)<option value="{{ $f->clave }}">{{ $f->nombre }}</option>@endforeach
+                                </select>
+                            </div>
+                            <div class="mt-3">
+                                <label class="block mb-1 text-sm">Referencia</label>
+                                <input id="ref" class="w-full px-3 py-2 border rounded-lg">
+                            </div>
+                            <div class="mt-3">
+                                <label class="block mb-1 text-sm">Observaciones</label>
+                                <textarea id="obs" rows="2" class="w-full px-3 py-2 border rounded-lg"></textarea>
+                            </div>
+                        </div>`,
+                showCancelButton: true,
+                confirmButtonText: '✅ Pagar $' + monto.toFixed(2),
+                cancelButtonText: 'Cancelar',
+                preConfirm: () => ({
+                    forma_pago: document.getElementById('fp').value,
+                    referencia: document.getElementById('ref').value,
+                    observaciones: document.getElementById('obs').value,
+                    caja_apertura_id: document.getElementById('cajaActivaSelect')?.value || null
+                })
+            });
+
+            if (!formValues) return;
+            Swal.fire({ title: 'Procesando...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+            try {
+                const res = await axios.post(`/cobranza/pagare/${id}/pagar`, formValues);
+                if (res.data?.success) { await Swal.fire({ icon: 'success', title: '¡Pagado!', timer: 2000 }); location.reload(); }
+            } catch (e) {
+                Swal.fire({ icon: 'error', title: 'Error', text: e.response?.data?.message || 'Error', confirmButtonColor: '#ef4444' });
             }
-        }).then((result) => {
-            if (result.isConfirmed) {
-                axios.post(`/cobranza/pagare/${id}/pagar`, result.value)
-                    .then(response => {
-                        Swal.fire('Éxito', 'Pagaré pagado correctamente', 'success');
-                        location.reload();
-                    })
-                    .catch(error => {
-                        Swal.fire('Error', error.response?.data?.message || 'Error al pagar', 'error');
-                    });
+        }
+
+        async function condonarPagare(id, folio, monto) {
+            @cannot('condonar_adeudo')
+            Swal.fire({ icon: 'error', title: 'Acceso denegado', confirmButtonColor: '#ef4444' }); return;
+            @endcannot
+
+            const { value: formValues } = await Swal.fire({
+                title: '⚠️ Condonar adeudo',
+                html: `<div class="text-left">
+                            <p>Pagaré: <strong>${folio}</strong></p>
+                            <p>Monto a condonar: <strong class="text-red-600">$${monto.toFixed(2)}</strong></p>
+                            <div class="mt-3"><label class="block mb-1 text-sm">Motivo *</label><textarea id="motivo" rows="2" class="w-full px-3 py-2 border rounded-lg" placeholder="Motivo de la condonación"></textarea></div>
+                            <div class="mt-3"><label class="block mb-1 text-sm">Autorizado por *</label><input id="autorizado" class="w-full px-3 py-2 border rounded-lg" placeholder="Nombre del autorizador"></div>
+                        </div>`,
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonText: '✅ Condonar',
+                cancelButtonText: 'Cancelar',
+                confirmButtonColor: '#ef4444',
+                preConfirm: () => {
+                    if (!document.getElementById('motivo').value) { Swal.showValidationMessage('Ingresa el motivo'); return false; }
+                    if (!document.getElementById('autorizado').value) { Swal.showValidationMessage('Ingresa quién autoriza'); return false; }
+                    return { motivo: document.getElementById('motivo').value, autorizado_por: document.getElementById('autorizado').value, pagare_id: id };
+                }
+            });
+
+            if (!formValues) return;
+            Swal.fire({ title: 'Procesando...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+            try {
+                const res = await axios.post('{{ route("cobranza.condonar") }}', formValues);
+                if (res.data?.success) { await Swal.fire({ icon: 'success', title: 'Condonado', timer: 2000 }); location.reload(); }
+            } catch (e) {
+                Swal.fire({ icon: 'error', title: 'Error', text: e.response?.data?.message || 'Error', confirmButtonColor: '#ef4444' });
             }
-        });
-    }
-</script>
+        }
+    </script>
 @endsection
