@@ -11,13 +11,15 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('pago_detalles', function (Blueprint $table) {
+        Schema::create('empresa_forma_pagos', function (Blueprint $table) {
             $table->id();
-             $table->unsignedBigInteger('venta_id');
+            $table->unsignedBigInteger('empresa_id');
             $table->unsignedBigInteger('forma_pago_id');
-            $table->decimal('monto', 12, 2);
-            $table->string('referencia', 100)->nullable();
+            $table->boolean('activo')->default(true);
+            $table->integer('orden_empresa')->default(0);
             $table->timestamps();
+            
+            $table->unique(['empresa_id', 'forma_pago_id']);
         });
     }
 
@@ -26,6 +28,6 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('pago_detalles');
+        Schema::dropIfExists('empresa_forma_pagos');
     }
 };

@@ -28,7 +28,7 @@
 @endsection
 
 @section('content')
-<div class="max-w-2xl mx-auto" x-data="logoEditor()" x-init="initEditor">
+<div class="max-w-2xl mx-auto" x-data="empresaEditForm()" x-init="init">
     <x-alert type="error" :message="session('error')" />
 
     @if($errors->any())
@@ -114,12 +114,14 @@
 
                 <div>
                     <label class="block mb-2 text-sm font-medium text-gray-700">Licencia *</label>
-                    <select name="licencia_id" required
+                    <select name="licencia_id" x-model="licenciaId" @change="calcularFechaFin" required
                         class="w-full border rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 {{ $errors->has('licencia_id') ? 'border-red-500 bg-red-50' : 'border-gray-300' }}">
                         <option value="">Seleccionar licencia...</option>
                         @foreach($licencias as $licencia)
-                            <option value="{{ $licencia->id }}" {{ old('licencia_id', $empresa->licencia_id) == $licencia->id ? 'selected' : '' }}>
+                            <option value="{{ $licencia->id }}" data-dias="{{ $licencia->dias }}"
+                                {{ old('licencia_id', $empresa->licencia_id) == $licencia->id ? 'selected' : '' }}>
                                 {{ $licencia->nombre }} - ${{ number_format($licencia->precio, 2) }}
+                                ({{ $licencia->dias }} días)
                             </option>
                         @endforeach
                     </select>
@@ -149,16 +151,15 @@
                 <div class="grid grid-cols-2 gap-4">
                     <div>
                         <label class="block mb-2 text-sm font-medium text-gray-700">Fecha inicio *</label>
-                        <input type="date" name="fecha_inicio"
-                            value="{{ old('fecha_inicio', $empresa->fecha_inicio->format('Y-m-d')) }}" required
+                        <input type="date" name="fecha_inicio" x-model="fechaInicio" @change="calcularFechaFin" required
                             class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500">
                         @error('fecha_inicio') <p class="mt-1 text-sm text-red-500">⚠️ {{ $message }}</p> @enderror
                     </div>
                     <div>
                         <label class="block mb-2 text-sm font-medium text-gray-700">Fecha fin *</label>
-                        <input type="date" name="fecha_fin"
-                            value="{{ old('fecha_fin', $empresa->fecha_fin->format('Y-m-d')) }}" required
-                            class="w-full border rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 {{ $errors->has('fecha_fin') ? 'border-red-500 bg-red-50' : 'border-gray-300' }}">
+                        <input type="date" name="fecha_fin" x-model="fechaFin" required
+                            class="w-full px-4 py-3 border rounded-xl focus:ring-2 focus:ring-indigo-500 bg-gray-50">
+                        <p class="mt-1 text-xs text-gray-500" x-show="fechaFinAuto" x-text="mensajeAuto"></p>
                         @error('fecha_fin') <p class="mt-1 text-sm text-red-500">⚠️ {{ $message }}</p> @enderror
                     </div>
                 </div>
@@ -207,24 +208,82 @@
 </div>
 
 <script>
-function logoEditor() {
+function empresaEditForm() {
     return {
+        // Datos de licencias
+        licenciasData: [],
+        
+        // Variables del formulario
+        licenciaId: '',
+        fechaInicio: '',
+        fechaFin: '',
+        fechaFinAuto: false,
+        mensajeAuto: '',
+        
+        // Logo editor
         previewUrl: null,
         showCropper: false,
         cropImageUrl: null,
         currentFile: null,
         cropper: null,
         
-        initEditor() {
-            console.log('initEditor llamado');
+        init() {
+            // Cargar datos de licencias
+            @php
+                $licenciasArray = [];
+                foreach($licencias as $licencia) {
+                    $licenciasArray[] = [
+                        'id' => $licencia->id, 
+                        'dias' => $licencia->dias,
+                        'nombre' => $licencia->nombre
+                    ];
+                }
+            @endphp
+            this.licenciasData = @json($licenciasArray);
+            
+            // Inicializar valores
+            this.licenciaId = '{{ old("licencia_id", $empresa->licencia_id) }}';
+            this.fechaInicio = '{{ old("fecha_inicio", $empresa->fecha_inicio->format("Y-m-d")) }}';
+            this.fechaFin = '{{ old("fecha_fin", $empresa->fecha_fin->format("Y-m-d")) }}';
+            this.fechaFinAuto = false;
+            
+            // Inicializar logo
             @if($empresa->logo_url)
                 this.previewUrl = '{{ $empresa->logo_url }}';
-                console.log('Logo existente:', this.previewUrl);
             @endif
         },
         
+        calcularFechaFin() {
+            if (!this.licenciaId || !this.fechaInicio) {
+                return;
+            }
+            
+            const licencia = this.licenciasData.find(l => l.id == parseInt(this.licenciaId));
+            if (!licencia || !licencia.dias) {
+                return;
+            }
+            
+            // 🔥 MÉTODO UTC MANUAL
+            const [year, month, day] = this.fechaInicio.split('-').map(Number);
+            
+            // Crear fecha UTC (meses en JS son 0-11)
+            const fechaInicioUTC = new Date(Date.UTC(year, month - 1, day));
+            
+            // Sumar días en UTC
+            const fechaFinUTC = new Date(fechaInicioUTC);
+            fechaFinUTC.setUTCDate(fechaFinUTC.getUTCDate() + licencia.dias);
+            
+            // Formatear resultado
+            const yearFin = fechaFinUTC.getUTCFullYear();
+            const monthFin = String(fechaFinUTC.getUTCMonth() + 1).padStart(2, '0');
+            const dayFin = String(fechaFinUTC.getUTCDate()).padStart(2, '0');
+            
+            this.fechaFin = `${yearFin}-${monthFin}-${dayFin}`;
+            this.fechaFinAuto = true;
+            this.mensajeAuto = `📅 Vigencia calculada: ${licencia.dias} días (del ${this.fechaInicio} al ${this.fechaFin})`;
+        },
+        
         handleFileUpload(event) {
-            console.log('handleFileUpload llamado');
             const file = event.target.files[0];
             if (file) {
                 const allowedTypes = ['image/jpeg', 'image/png', 'image/jpg', 'image/gif', 'image/webp'];
@@ -251,11 +310,9 @@ function logoEditor() {
         },
         
         openCropper() {
-            console.log('openCropper llamado');
             this.showCropper = true;
             this.$nextTick(() => {
                 const image = document.getElementById('crop-image');
-                console.log('Imagen encontrada:', image);
                 if (image && window.Cropper) {
                     if (this.cropper) {
                         this.cropper.destroy();
@@ -269,7 +326,6 @@ function logoEditor() {
                         background: false,
                         autoCropArea: 1,
                     });
-                    console.log('Cropper inicializado');
                 } else {
                     console.error('Cropper no disponible o imagen no encontrada');
                 }
@@ -277,7 +333,6 @@ function logoEditor() {
         },
         
         cropImage() {
-            console.log('cropImage llamado');
             if (this.cropper) {
                 const canvas = this.cropper.getCroppedCanvas({
                     width: 200,
@@ -297,7 +352,6 @@ function logoEditor() {
         },
         
         closeCropper() {
-            console.log('closeCropper llamado');
             this.showCropper = false;
             if (this.cropper) {
                 this.cropper.destroy();

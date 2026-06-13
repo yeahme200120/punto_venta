@@ -4,8 +4,12 @@ namespace App\Http\Controllers;
 
 use App\Exports\EmpresasExport;
 use App\Models\Empresa;
+use App\Models\EmpresaFormaPago;
+use App\Models\EmpresaLicenciaHistorial;
+use App\Models\FormaPago;
 use App\Models\Licencia;
 use App\Models\Sucursal;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -141,6 +145,9 @@ class EmpresaController extends Controller
 
         DB::beginTransaction();
         try {
+            // Calcular fecha_fin correctamente: fecha_inicio + días de la licencia
+            $licencia = Licencia::find($validated['licencia_id']);
+            $fechaFin = \Carbon\Carbon::parse($validated['fecha_inicio'])->addDays($licencia->dias);
             // Crear empresa primero para tener el ID
             $empresa = Empresa::create([
                 'licencia_id' => $validated['licencia_id'],
@@ -150,7 +157,7 @@ class EmpresaController extends Controller
                 'telefono' => $validated['telefono'],
                 'correo' => $validated['correo'],
                 'fecha_inicio' => $validated['fecha_inicio'],
-                'fecha_fin' => $validated['fecha_fin'],
+                'fecha_fin' => $fechaFin,
                 'activo' => true,
             ]);
 
@@ -158,6 +165,9 @@ class EmpresaController extends Controller
             if ($request->hasFile('logo')) {
                 $this->handleLogoUpload($request->file('logo'), $empresa);
             }
+
+            // 🔥 INICIALIZAR FORMAS DE PAGO PARA LA NUEVA EMPRESA
+            $this->inicializarFormasPago($empresa->id);
 
             DB::commit();
 
@@ -171,6 +181,22 @@ class EmpresaController extends Controller
                 ->withInput()
                 ->with('error', 'Error al crear la empresa: ' . $e->getMessage());
         }
+    }
+    private function inicializarFormasPago($empresaId)
+    {
+        // Obtener formas de pago activas globalmente
+        $formasActivasGlobal = FormaPago::where('activo_global', true)->get();
+
+        foreach ($formasActivasGlobal as $forma) {
+            EmpresaFormaPago::create([
+                'empresa_id' => $empresaId,
+                'forma_pago_id' => $forma->id,
+                'activo' => true,
+                'orden_empresa' => $forma->orden
+            ]);
+        }
+
+        Log::info("Formas de pago inicializadas para empresa ID: {$empresaId}");
     }
     /**
      * Ver empresa con sucursales
@@ -345,6 +371,82 @@ class EmpresaController extends Controller
             Log::error('Error al procesar logo: ' . $e->getMessage());
             Log::error('Stack trace: ' . $e->getTraceAsString());
             throw $e;
+        }
+    }
+    /**
+     * Mostrar formulario de renovación de licencia
+     */
+    public function renovarLicencia(Empresa $empresa)
+    {
+        if (!auth()->user()->hasRole('Super Admin')) {
+            abort(403);
+        }
+
+        $licencias = Licencia::where('activo', true)->orderBy('dias')->get();
+
+        // 🔥 OBTENER LICENCIA ACTIVA DESDE EL MÉTODO DEL MODELO
+        $licenciaActiva = $empresa->licenciaActiva();
+
+        // Calcular días restantes usando el método del modelo
+        $diasRestantes = $empresa->diasRestantesLicencia();
+
+        $historial = $empresa->historialLicencias()->with('licencia')->get();
+
+        return view('empresas.licencias', compact('empresa', 'licencias', 'licenciaActiva', 'diasRestantes', 'historial'));
+    }
+
+    /**
+     * Procesar renovación de licencia
+     */
+    public function procesarRenovacionLicencia(Request $request, Empresa $empresa)
+    {
+        if (!auth()->user()->hasRole('Super Admin')) {
+            abort(403);
+        }
+
+        $validated = $request->validate([
+            'licencia_id' => 'required|exists:licencias,id',
+            'fecha_inicio_periodo' => 'required|date',
+            'fecha_fin_periodo' => 'required|date|after_or_equal:fecha_inicio_periodo',
+            'monto_pagado' => 'required|numeric|min:0',
+            'referencia_pago' => 'nullable|string|max:100',
+            'observaciones' => 'nullable|string',
+        ]);
+
+        DB::beginTransaction();
+        try {
+            // Calcular fecha_fin correctamente: fecha_inicio_periodo + días de la licencia
+            $licencia = Licencia::find($validated['licencia_id']);
+            $fechaFinPeriodo = Carbon::parse($validated['fecha_inicio_periodo'])->addDays($licencia->dias) ->endOfDay();
+            // Guardar en historial
+            EmpresaLicenciaHistorial::create([
+                'empresa_id' => $empresa->id,
+                'licencia_id' => $validated['licencia_id'],
+                'fecha_inicio_original' => $empresa->fecha_inicio,
+                'fecha_inicio_periodo' => $validated['fecha_inicio_periodo'],
+                'fecha_fin_periodo' => $fechaFinPeriodo,
+                'monto_pagado' => $validated['monto_pagado'],
+                'referencia_pago' => $validated['referencia_pago'],
+                'observaciones' => $validated['observaciones'],
+            ]);
+
+            // 🔥 Actualizar la licencia activa de la empresa (para fácil acceso)
+            $licencia = Licencia::find($validated['licencia_id']);
+            $empresa->update([
+                'licencia_id' => $licencia->id,
+                'fecha_inicio' => $empresa->fecha_inicio, // No cambiar la original
+                'fecha_fin' => $fechaFinPeriodo,
+            ]);
+
+            DB::commit();
+
+            return redirect()->route('empresas.show', $empresa)
+                ->with('success', 'Licencia renovada correctamente. Nueva vigencia hasta: ' . date('d/m/Y', strtotime($validated['fecha_fin_periodo'])));
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Error al renovar licencia: ' . $e->getMessage());
+            return back()->withInput()->with('error', 'Error al renovar la licencia: ' . $e->getMessage());
         }
     }
 }

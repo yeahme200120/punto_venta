@@ -2,7 +2,7 @@
 @extends('layouts.app')
 
 @section('title', 'Formas de Pago')
-@section('page-title', 'Formas de Pago')
+@section('page-title', 'Formas de Pago - Catálogo Global')
 @section('breadcrumbs')
     <li><span class="text-gray-400">/</span></li>
     <li><span class="font-medium text-gray-700">Formas de Pago</span></li>
@@ -10,8 +10,16 @@
 
 @section('content')
 <div class="space-y-6">
-    {{-- Botón nuevo --}}
-    <div class="flex justify-end">
+    {{-- Botones de acción --}}
+    <div class="flex justify-between gap-4">
+        <a href="{{ route('formas_pago.configurar.empresa', session('empresa_activa_id')) }}" 
+           class="flex items-center gap-2 px-4 py-2 text-white transition rounded-lg bg-cyan-600 hover:bg-cyan-700">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+            </svg>
+            Configurar por empresa
+        </a>
         <a href="{{ route('formas_pago.create') }}" 
            class="flex items-center gap-2 px-4 py-2 text-white transition bg-indigo-600 rounded-lg hover:bg-indigo-700">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -21,8 +29,11 @@
         </a>
     </div>
 
-    {{-- Tabla --}}
+    {{-- Tabla de catálogo global --}}
     <div class="overflow-hidden bg-white border shadow-sm rounded-2xl">
+        <div class="px-4 py-3 border-b bg-gray-50">
+            <p class="text-sm text-gray-500">Catálogo global de formas de pago</p>
+        </div>
         <div class="overflow-x-auto">
             <table class="w-full">
                 <thead class="border-b bg-gray-50">
@@ -33,7 +44,7 @@
                         <th class="px-4 py-3 text-xs font-medium text-center text-gray-500 uppercase">Orden</th>
                         <th class="px-4 py-3 text-xs font-medium text-center text-gray-500 uppercase">Requiere Ref.</th>
                         <th class="px-4 py-3 text-xs font-medium text-center text-gray-500 uppercase">Requiere Auth.</th>
-                        <th class="px-4 py-3 text-xs font-medium text-center text-gray-500 uppercase">Estado</th>
+                        <th class="px-4 py-3 text-xs font-medium text-center text-gray-500 uppercase">Estado Global</th>
                         <th class="px-4 py-3 text-xs font-medium text-center text-gray-500 uppercase">Acciones</th>
                     </tr>
                 </thead>
@@ -46,23 +57,23 @@
                         <td class="px-4 py-3 text-center">{{ $forma->orden }}</td>
                         <td class="px-4 py-3 text-center">
                             @if($forma->requiere_referencia)
-                                <span class="text-green-600">✅</span>
+                                <span class="px-2 py-1 text-xs text-green-700 bg-green-100 rounded-full">Sí</span>
                             @else
-                                <span class="text-gray-400">❌</span>
+                                <span class="px-2 py-1 text-xs text-gray-500 bg-gray-100 rounded-full">No</span>
                             @endif
                         </td>
                         <td class="px-4 py-3 text-center">
                             @if($forma->requiere_autorizacion)
-                                <span class="text-orange-600">🔐</span>
+                                <span class="px-2 py-1 text-xs text-orange-700 bg-orange-100 rounded-full">Sí</span>
                             @else
-                                <span class="text-gray-400">❌</span>
+                                <span class="px-2 py-1 text-xs text-gray-500 bg-gray-100 rounded-full">No</span>
                             @endif
                         </td>
                         <td class="px-4 py-3 text-center">
                             <button onclick="toggleActivo({{ $forma->id }})" 
                                     class="px-2 py-1 text-xs rounded-full transition 
-                                           {{ $forma->activo ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-red-100 text-red-700 hover:bg-red-200' }}">
-                                {{ $forma->activo ? 'Activo' : 'Inactivo' }}
+                                           {{ $forma->activo_global ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-red-100 text-red-700 hover:bg-red-200' }}">
+                                {{ $forma->activo_global ? 'Activo' : 'Inactivo' }}
                             </button>
                         </td>
                         <td class="px-4 py-3 text-center">
@@ -85,7 +96,7 @@
                     @empty
                     <tr>
                         <td colspan="8" class="px-4 py-12 text-center text-gray-400">
-                            No hay formas de pago registradas.
+                            No hay formas de pago registradas en el catálogo global.
                         </td>
                     </tr>
                     @endforelse
@@ -127,7 +138,7 @@ function toggleActivo(id) {
 function confirmDelete(id, nombre) {
     Swal.fire({
         title: '¿Eliminar forma de pago?',
-        html: `Se eliminará <strong>${nombre}</strong>. Esta acción no se puede deshacer.`,
+        html: `Se eliminará <strong>${nombre}</strong> del catálogo global.<br><span class="text-red-500">⚠️ Esta acción no se puede deshacer.</span>`,
         icon: 'warning',
         showCancelButton: true,
         confirmButtonColor: '#d33',

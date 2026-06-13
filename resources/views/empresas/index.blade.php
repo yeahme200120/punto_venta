@@ -13,19 +13,19 @@
         Mostrando {{ $empresas->count() }} de {{ $empresas->total() }} empresas
     </span>
     <a href="{{ route('empresas.export') }}" 
-        class="px-4 py-2 bg-green-600 text-white rounded-xl hover:bg-green-700 transition text-sm font-medium shadow flex items-center gap-2">
+        class="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white transition bg-green-600 shadow rounded-xl hover:bg-green-700">
         📥 Exportar Excel
     </a>
 </div>
 
-<div class="bg-white rounded-3xl shadow-lg overflow-hidden">
-    <div class="p-6 border-b flex justify-between items-center">
+<div class="overflow-hidden bg-white shadow-lg rounded-3xl">
+    <div class="flex items-center justify-between p-6 border-b">
         <div>
             <h2 class="text-lg font-semibold text-slate-800">Todas las empresas</h2>
-            <p class="text-sm text-gray-500 mt-1">Gestión global de empresas</p>
+            <p class="mt-1 text-sm text-gray-500">Gestión global de empresas</p>
         </div>
         <a href="{{ route('empresas.create') }}"
-            class="px-4 py-2 bg-gradient-to-r from-indigo-600 to-cyan-500 text-white rounded-xl hover:from-indigo-700 hover:to-cyan-600 transition font-medium shadow text-sm">
+            class="px-4 py-2 text-sm font-medium text-white transition shadow bg-gradient-to-r from-indigo-600 to-cyan-500 rounded-xl hover:from-indigo-700 hover:to-cyan-600">
             + Nueva empresa
         </a>
     </div>
@@ -34,40 +34,40 @@
         <table class="w-full">
             <thead class="bg-gray-50">
                 <tr>
-                    <th class="px-6 py-3 text-xs font-medium text-gray-500 uppercase text-left">Empresa</th>
-                    <th class="px-6 py-3 text-xs font-medium text-gray-500 uppercase text-left">RFC</th>
-                    <th class="px-6 py-3 text-xs font-medium text-gray-500 uppercase text-left">Licencia</th>
-                    <th class="px-6 py-3 text-xs font-medium text-gray-500 uppercase text-center">Sucursales</th>
-                    <th class="px-6 py-3 text-xs font-medium text-gray-500 uppercase text-center">Usuarios</th>
-                    <th class="px-6 py-3 text-xs font-medium text-gray-500 uppercase text-center">Vence</th>
-                    <th class="px-6 py-3 text-xs font-medium text-gray-500 uppercase text-center">Estado</th>
-                    <th class="px-6 py-3 text-xs font-medium text-gray-500 uppercase text-right">Acciones</th>
+                    <th class="px-6 py-3 text-xs font-medium text-left text-gray-500 uppercase">Empresa</th>
+                    <th class="px-6 py-3 text-xs font-medium text-left text-gray-500 uppercase">RFC</th>
+                    <th class="px-6 py-3 text-xs font-medium text-left text-gray-500 uppercase">Licencia</th>
+                    <th class="px-6 py-3 text-xs font-medium text-center text-gray-500 uppercase">Sucursales</th>
+                    <th class="px-6 py-3 text-xs font-medium text-center text-gray-500 uppercase">Usuarios</th>
+                    <th class="px-6 py-3 text-xs font-medium text-center text-gray-500 uppercase">Vence</th>
+                    <th class="px-6 py-3 text-xs font-medium text-center text-gray-500 uppercase">Estado</th>
+                    <th class="px-6 py-3 text-xs font-medium text-right text-gray-500 uppercase">Acciones</th>
                 </tr>
             </thead>
             <tbody class="divide-y divide-gray-200">
                 @forelse($empresas as $empresa)
-                <tr class="hover:bg-gray-50 transition">
+                <tr class="transition hover:bg-gray-50">
                     <td class="px-6 py-4 font-semibold text-slate-800">{{ $empresa->nombre }}</td>
-                    <td class="px-6 py-4 text-gray-500 text-sm">{{ $empresa->rfc }}</td>
+                    <td class="px-6 py-4 text-sm text-gray-500">{{ $empresa->rfc }}</td>
                     <td class="px-6 py-4 text-sm">
-                        <span class="px-2 py-1 bg-blue-100 text-blue-700 rounded-full text-xs">{{ $empresa->licencia->nombre }}</span>
+                        <span class="px-2 py-1 text-xs text-blue-700 bg-blue-100 rounded-full">{{ $empresa->licencia->nombre }}</span>
                     </td>
-                    <td class="px-6 py-4 text-center text-sm">{{ $empresa->sucursales->count() }}</td>
-                    <td class="px-6 py-4 text-center text-sm">{{ $empresa->usuarios->count() }}</td>
+                    <td class="px-6 py-4 text-sm text-center">{{ $empresa->sucursales->count() }}</td>
+                    <td class="px-6 py-4 text-sm text-center">{{ $empresa->usuarios->count() }}</td>
                     <td class="px-6 py-4 text-center text-sm {{ $empresa->fecha_fin < now() ? 'text-red-600 font-semibold' : 'text-gray-500' }}">
                         {{ $empresa->fecha_fin->format('d/m/Y') }}
                     </td>
                     <td class="px-6 py-4 text-center">
                         @if($empresa->activo && $empresa->fecha_fin >= now())
-                            <span class="text-green-600 text-sm">● Activo</span>
+                            <span class="text-sm text-green-600">● Activo</span>
                         @else
-                            <span class="text-red-600 text-sm">● Inactivo</span>
+                            <span class="text-sm text-red-600">● Inactivo</span>
                         @endif
                     </td>
                     <td class="px-6 py-4">
                         <div class="flex items-center justify-end gap-2">
                             <a href="{{ route('empresa.cambiar', $empresa) }}"
-                                class="px-3 py-1 bg-green-100 text-green-700 rounded-lg text-xs hover:bg-green-200 transition" title="Entrar">🚪</a>
+                                class="px-3 py-1 text-xs text-green-700 transition bg-green-100 rounded-lg hover:bg-green-200" title="Entrar">🚪</a>
                             <a href="{{ route('empresas.show', $empresa) }}" class="p-2 hover:text-indigo-600" title="Ver">👁️</a>
                             <a href="{{ route('empresas.edit', $empresa) }}" class="p-2 hover:text-amber-600" title="Editar">✏️</a>
                         </div>

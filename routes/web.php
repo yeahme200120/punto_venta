@@ -59,6 +59,10 @@ Route::middleware(['auth', 'empresa.activa'])->group(function () {
         Route::get('/{empresa}/edit', [EmpresaController::class, 'edit'])->name('edit')->middleware('permiso:editar_empresas');
         Route::put('/{empresa}', [EmpresaController::class, 'update'])->name('update')->middleware('permiso:editar_empresas');
         Route::delete('/{empresa}', [EmpresaController::class, 'destroy'])->name('destroy')->middleware('permiso:eliminar_empresas');
+        
+        // ✅ CORREGIDO: Las rutas de renovación de licencia
+        Route::get('/{empresa}/licencias/renovar', [EmpresaController::class, 'renovarLicencia'])->name('licencias.renovar');
+        Route::post('/{empresa}/licencias/renovar', [EmpresaController::class, 'procesarRenovacionLicencia'])->name('licencias.renovar.procesar');
     });
     Route::get('/empresa/{empresa}/cambiar', [EmpresaController::class, 'cambiar'])->name('empresa.cambiar');
 
@@ -219,10 +223,20 @@ Route::middleware(['auth', 'empresa.activa'])->group(function () {
         Route::get('/', [FormaPagoController::class, 'index'])->name('index')->middleware('permiso:ver_formaspago');
         Route::get('/create', [FormaPagoController::class, 'create'])->name('create')->middleware('permiso:crear_formaspago');
         Route::post('/', [FormaPagoController::class, 'store'])->name('store')->middleware('permiso:crear_formaspago');
+        Route::get('/{formaPago}', [FormaPagoController::class, 'show'])->name('show');  // ← Agregar esta línea
+
         Route::get('/{formaPago}/edit', [FormaPagoController::class, 'edit'])->name('edit')->middleware('permiso:editar_formaspago');
         Route::put('/{formaPago}', [FormaPagoController::class, 'update'])->name('update')->middleware('permiso:editar_formaspago');
         Route::delete('/{formaPago}', [FormaPagoController::class, 'destroy'])->name('destroy')->middleware('permiso:eliminar_formaspago');
         Route::post('/{formaPago}/toggle-activo', [FormaPagoController::class, 'toggleActivo'])->name('toggle-activo')->middleware('permiso:editar_formaspago');
+
+        // ✅ Configuración por empresa (rutas correctas)
+        Route::get('/configurar/empresa/{empresa}', [FormaPagoController::class, 'configurarPorEmpresa'])->name('configurar.empresa');
+        Route::post('/configurar/empresa/{empresa}', [FormaPagoController::class, 'actualizarConfiguracion'])->name('configurar.empresa.update');
+
+        // ✅ API para obtener activas
+        Route::get('/activas', [FormaPagoController::class, 'getActivas'])->name('activas');
+
     });
 
     // ===== TICKET =====
@@ -297,9 +311,13 @@ Route::middleware(['auth', 'empresa.activa'])->group(function () {
     // ===== CAJA =====
     Route::prefix('caja')->name('cajas.')->middleware(['auth', 'empresa.activa'])->group(function () {
         // Gestión de cajas
+
         Route::get('/cajas', [CajaController::class, 'indexCajas'])->name('cajas.index')->middleware('permiso:ver_cajas');
         Route::get('/cajas/create', [CajaController::class, 'createCaja'])->name('cajas.create')->middleware('permiso:crear_caja');
         Route::post('/cajas', [CajaController::class, 'storeCaja'])->name('cajas.store')->middleware('permiso:crear_caja');
+
+        Route::post('/cambiar-caja', [CajaController::class, 'cambiarCajaOperacion'])->name('cambiar');
+
         Route::get('/cajas/{caja}/edit', [CajaController::class, 'editCaja'])->name('cajas.edit')->middleware('permiso:editar_caja');
         Route::put('/cajas/{caja}', [CajaController::class, 'updateCaja'])->name('cajas.update')->middleware('permiso:editar_caja');
         Route::delete('/cajas/{caja}', [CajaController::class, 'destroyCaja'])->name('cajas.destroy')->middleware('permiso:eliminar_caja');

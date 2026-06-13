@@ -1,9 +1,102 @@
-{{-- Cambiar el form --}}
-<form id="formCrearUsuario" onsubmit="return guardarUsuario(event)">
-    @csrf
-    {{-- ... mismos campos ... --}}
-    <button type="submit" id="btnGuardar" class="px-8 py-3 bg-gradient-to-r from-indigo-600 to-cyan-500 text-white rounded-xl">💾 Crear usuario</button>
-</form>
+@extends('layouts.app')
+
+@section('title', 'Nuevo Usuario')
+@section('page-title', 'Nuevo Usuario')
+
+@section('content')
+<div class="max-w-2xl mx-auto">
+    <div class="overflow-hidden bg-white shadow-lg rounded-3xl">
+        <div class="p-6 border-b bg-gradient-to-r from-indigo-600 to-cyan-500">
+            <h2 class="text-xl font-bold text-white">Crear nuevo usuario</h2>
+            <p class="text-sm text-indigo-100">Complete los datos del usuario</p>
+        </div>
+
+        <form id="formCrearUsuario" onsubmit="return guardarUsuario(event)" class="p-6 space-y-5">
+            @csrf
+            
+            <div>
+                <label class="block mb-2 text-sm font-medium text-gray-700">Nombre completo *</label>
+                <input type="text" name="name" id="name" required 
+                    class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500">
+            </div>
+
+            <div>
+                <label class="block mb-2 text-sm font-medium text-gray-700">Correo electrónico *</label>
+                <input type="email" name="email" id="email" required 
+                    class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500">
+            </div>
+
+            <div>
+                <label class="block mb-2 text-sm font-medium text-gray-700">Contraseña *</label>
+                <input type="password" name="password" id="password" required minlength="6"
+                    class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500">
+                <p class="mt-1 text-xs text-gray-400">Mínimo 6 caracteres</p>
+            </div>
+
+            <div>
+                <label class="block mb-2 text-sm font-medium text-gray-700">Confirmar contraseña *</label>
+                <input type="password" name="password_confirmation" id="password_confirmation" required
+                    class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500">
+            </div>
+
+            @if(auth()->user()->hasRole('Super Admin'))
+            <div>
+                <label class="block mb-2 text-sm font-medium text-gray-700">Empresa</label>
+                <select name="empresa_id" id="empresa_id" 
+                    class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500">
+                    <option value="">Seleccionar empresa...</option>
+                    @foreach($empresas as $empresa)
+                        <option value="{{ $empresa->id }}" {{ $empresa->id == $empresaId ? 'selected' : '' }}>
+                            {{ $empresa->nombre }}
+                        </option>
+                    @endforeach
+                </select>
+            </div>
+            @endif
+
+            <div>
+                <label class="block mb-2 text-sm font-medium text-gray-700">Sucursal</label>
+                <select name="sucursal_id" id="sucursal_id" 
+                    class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500">
+                    <option value="">Seleccionar sucursal...</option>
+                    @foreach($sucursales as $sucursal)
+                        <option value="{{ $sucursal->id }}">{{ $sucursal->nombre }}</option>
+                    @endforeach
+                </select>
+            </div>
+
+            <div>
+                <label class="block mb-2 text-sm font-medium text-gray-700">Roles</label>
+                <div class="space-y-2">
+                    @foreach($roles as $role)
+                    <label class="flex items-center gap-2">
+                        <input type="checkbox" name="roles[]" value="{{ $role->name }}" 
+                            class="text-indigo-600 border-gray-300 rounded focus:ring-indigo-500">
+                        <span class="text-sm text-gray-700">{{ $role->name }}</span>
+                    </label>
+                    @endforeach
+                </div>
+            </div>
+
+            <div class="flex items-center gap-2">
+                <input type="checkbox" name="activo" id="activo" checked value="1"
+                    class="text-indigo-600 border-gray-300 rounded focus:ring-indigo-500">
+                <label for="activo" class="text-sm font-medium text-gray-700">Usuario activo</label>
+            </div>
+
+            <div class="flex justify-end gap-4 pt-4">
+                <a href="{{ route('usuarios.index') }}" 
+                    class="px-6 py-3 font-medium transition border-2 border-slate-300 rounded-xl text-slate-600 hover:bg-slate-50">
+                    Cancelar
+                </a>
+                <button type="submit" id="btnGuardar" 
+                    class="px-8 py-3 font-semibold text-white transition shadow-lg bg-gradient-to-r from-indigo-600 to-cyan-500 rounded-xl hover:from-indigo-700 hover:to-cyan-600">
+                    💾 Crear usuario
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
 
 <script>
 async function guardarUsuario(event) {
@@ -13,19 +106,29 @@ async function guardarUsuario(event) {
     const formData = new FormData(form);
     
     btn.disabled = true;
-    Swal.fire({ title: 'Creando...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+    Swal.fire({ title: 'Creando usuario...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
     
     try {
-        const res = await axios.post(form.action, formData);
+        const res = await axios.post('{{ route("usuarios.store") }}', formData);
         if (res.data?.success !== false) {
-            await Swal.fire({ icon: 'success', title: 'Usuario creado', timer: 2000 });
+            await Swal.fire({ icon: 'success', title: 'Usuario creado', text: 'El usuario se ha creado correctamente.', timer: 2000 });
             window.location.href = '{{ route("usuarios.index") }}';
+        } else {
+            throw new Error(res.data?.message || 'Error al crear usuario');
         }
     } catch(e) {
         let msg = 'Error al crear usuario';
-        if (e.response?.status === 422) msg = Object.values(e.response.data.errors).flat().join('\n');
+        if (e.response?.status === 422) {
+            const errors = e.response.data.errors;
+            msg = Object.values(errors).flat().join('\n');
+        } else if (e.response?.data?.message) {
+            msg = e.response.data.message;
+        }
         Swal.fire({ icon: 'error', title: 'Error', text: msg, confirmButtonColor: '#ef4444' });
-    } finally { btn.disabled = false; }
+    } finally { 
+        btn.disabled = false; 
+    }
     return false;
 }
 </script>
+@endsection

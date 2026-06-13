@@ -95,6 +95,70 @@ class UsuarioController extends Controller
         }
     }
 
+    public function store(Request $request)
+    {
+        $user = auth()->user();
+        
+        $validated = $request->validate([
+            'name' => 'required|string|max:255',
+            'email' => 'required|email|unique:users,email',
+            'password' => 'required|min:6|confirmed',
+            'sucursal_id' => 'nullable|exists:sucursals,id',
+            'activo' => 'boolean',
+            'roles' => 'array',
+        ], [
+            'name.required' => 'El nombre del usuario es obligatorio.',
+            'email.required' => 'El correo electrónico es obligatorio.',
+            'email.email' => 'Ingrese un correo electrónico válido.',
+            'email.unique' => 'Este correo electrónico ya está registrado.',
+            'password.required' => 'La contraseña es obligatoria.',
+            'password.min' => 'La contraseña debe tener al menos 6 caracteres.',
+            'password.confirmed' => 'Las contraseñas no coinciden.',
+        ]);
+
+        DB::beginTransaction();
+        try {
+            $data = [
+                'name' => $validated['name'],
+                'email' => $validated['email'],
+                'password' => Hash::make($validated['password']),
+                'sucursal_id' => $request->sucursal_id,
+                'activo' => $request->has('activo'),
+                'empresa_id' => $this->empresaActivaId(),
+            ];
+
+            // Solo Super Admin puede asignar empresa_id
+            if ($user->hasRole('Super Admin') && $request->empresa_id) {
+                $data['empresa_id'] = $request->empresa_id;
+            }
+
+            $usuario = User::create($data);
+
+            // Asignar roles
+            if ($request->has('roles')) {
+                $rolesAsignar = $request->roles;
+                if (!$user->hasRole('Super Admin')) {
+                    $rolesAsignar = array_diff($rolesAsignar, ['Super Admin']);
+                }
+                if (!empty($rolesAsignar)) {
+                    $usuario->syncRoles($rolesAsignar);
+                }
+            }
+
+            DB::commit();
+
+            return redirect()->route('usuarios.index')
+                ->with('success', 'Usuario "' . $usuario->name . '" creado correctamente.');
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Error al crear usuario: ' . $e->getMessage());
+            return back()
+                ->withInput()
+                ->with('error', 'Error al crear el usuario. Intente nuevamente.');
+        }
+    }
+
     public function edit(User $usuario)
     {
         try {
@@ -137,8 +201,9 @@ class UsuarioController extends Controller
             'name' => 'required|string|max:255',
             'email' => 'required|email|unique:users,email,' . $usuario->id,
             'password' => 'nullable|min:6|confirmed',
-            'sucursal_id' => 'nullable|integer',
+            'sucursal_id' => 'nullable|exists:sucursals,id',
             'activo' => 'boolean',
+            'roles' => 'array',
         ], [
             'name.required' => 'El nombre del usuario es obligatorio.',
             'name.max' => 'El nombre no debe exceder los 255 caracteres.',
@@ -169,7 +234,7 @@ class UsuarioController extends Controller
             $usuario->update($data);
 
             // Validar que no se asigne el rol Super Admin si el usuario actual no es Super Admin
-            if ($request->roles) {
+            if ($request->has('roles')) {
                 $rolesAsignar = $request->roles;
                 if (!auth()->user()->hasRole('Super Admin')) {
                     $rolesAsignar = array_diff($rolesAsignar, ['Super Admin']);
@@ -201,7 +266,10 @@ class UsuarioController extends Controller
         $this->verificarPermisoEdicion($usuario);
 
         if ($usuario->id === auth()->id()) {
-            return back()->with('error', 'No puedes eliminar tu propio usuario.');
+            return response()->json([
+                'success' => false,
+                'message' => 'No puedes eliminar tu propio usuario.'
+            ], 400);
         }
 
         DB::beginTransaction();
@@ -210,13 +278,18 @@ class UsuarioController extends Controller
             $usuario->delete();
             DB::commit();
 
-            return redirect()->route('usuarios.index')
-                ->with('success', 'Usuario "' . $nombre . '" eliminado correctamente.');
+            return response()->json([
+                'success' => true,
+                'message' => 'Usuario "' . $nombre . '" eliminado correctamente.'
+            ]);
 
         } catch (\Exception $e) {
             DB::rollBack();
             Log::error('Error al eliminar usuario: ' . $e->getMessage());
-            return back()->with('error', 'Error al eliminar el usuario. Intente nuevamente.');
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al eliminar el usuario. Intente nuevamente.'
+            ], 500);
         }
     }
 
@@ -224,7 +297,6 @@ class UsuarioController extends Controller
     {
         try {
             $this->verificarEmpresa($usuario);
-            $this->verificarPermisoEdicion($usuario);
             $usuario->load(['roles', 'sucursal', 'empresa']);
             return view('usuarios.show', compact('usuario'));
 
@@ -285,6 +357,42 @@ class UsuarioController extends Controller
         } catch (\Exception $e) {
             Log::error('Error al exportar usuarios: ' . $e->getMessage());
             return back()->with('error', 'Error al generar el archivo Excel. Intente nuevamente.');
+        }
+    }
+
+    public function perfil()
+    {
+        $usuario = auth()->user();
+        return view('usuarios.perfil', compact('usuario'));
+    }
+
+    public function updatePerfil(Request $request)
+    {
+        $usuario = auth()->user();
+
+        $validated = $request->validate([
+            'name' => 'required|string|max:255',
+            'email' => 'required|email|unique:users,email,' . $usuario->id,
+            'password' => 'nullable|min:6|confirmed',
+        ]);
+
+        try {
+            $data = [
+                'name' => $validated['name'],
+                'email' => $validated['email'],
+            ];
+
+            if ($request->filled('password')) {
+                $data['password'] = Hash::make($validated['password']);
+            }
+
+            $usuario->update($data);
+
+            return back()->with('success', 'Perfil actualizado correctamente.');
+
+        } catch (\Exception $e) {
+            Log::error('Error al actualizar perfil: ' . $e->getMessage());
+            return back()->with('error', 'Error al actualizar el perfil.');
         }
     }
 

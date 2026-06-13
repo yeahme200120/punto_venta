@@ -2,9 +2,11 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\Empresa;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Carbon\Carbon;
 
 class VerificarEmpresa
 {
@@ -36,7 +38,7 @@ class VerificarEmpresa
 
             // Si no hay empresa en sesión, intentar usar la primera empresa disponible
             if (!$empresaActivaId) {
-                $primeraEmpresa = \App\Models\Empresa::where('activo', true)->first();
+                $primeraEmpresa = Empresa::where('activo', true)->first();
                 if ($primeraEmpresa) {
                     session([
                         'empresa_activa_id' => $primeraEmpresa->id,
@@ -48,9 +50,8 @@ class VerificarEmpresa
 
             // Verificar que la empresa activa en sesión existe y está activa
             if ($empresaActivaId) {
-                $empresaActiva = \App\Models\Empresa::find($empresaActivaId);
+                $empresaActiva = Empresa::find($empresaActivaId);
                 if (!$empresaActiva || !$empresaActiva->activo) {
-                    // Si la empresa no existe o está inactiva, limpiar sesión
                     session()->forget(['empresa_activa_id', 'empresa_activa_nombre']);
                 }
             }
@@ -58,7 +59,7 @@ class VerificarEmpresa
 
         // Verificar empresa activa (la del usuario o la de sesión para Super Admin)
         $empresa = $user->hasRole('Super Admin') && session('empresa_activa_id')
-            ? \App\Models\Empresa::find(session('empresa_activa_id'))
+            ? Empresa::find(session('empresa_activa_id'))
             : $user->empresa;
 
         if (!$empresa) {
@@ -79,16 +80,22 @@ class VerificarEmpresa
                 ->with('error', 'La empresa ha sido desactivada. Contacte al administrador.');
         }
 
-        // Verificar licencia vencida
-        if ($empresa->fecha_fin < now()) {
+        // 🔥 VERIFICAR LICENCIA VIGENTE (usando el método del modelo)
+        if (!$empresa->licenciaVigente()) {
+            // Obtener fecha de fin para mostrar en el mensaje
+            $licenciaActiva = $empresa->licenciaActiva();
+            $fechaFin = $licenciaActiva->fecha_fin_periodo ?? $empresa->fecha_fin;
+            $fechaFinTexto = $fechaFin ? Carbon::parse($fechaFin)->format('d/m/Y') : 'desconocida';
+            
             if ($user->hasRole('Super Admin')) {
                 session()->forget(['empresa_activa_id', 'empresa_activa_nombre']);
                 return redirect()->route('dashboard')
-                    ->with('error', 'La licencia de la empresa seleccionada ha expirado. Selecciona otra empresa.');
+                    ->with('error', "La licencia de la empresa '{$empresa->nombre}' ha expirado el {$fechaFinTexto}. Selecciona otra empresa o renueva la licencia.");
             }
+            
             Auth::logout();
             return redirect()->route('login')
-                ->with('error', 'La licencia de la empresa ha expirado el ' . $empresa->fecha_fin->format('d/m/Y') . '. Renueve para continuar.');
+                ->with('error', "La licencia de la empresa ha expirado el {$fechaFinTexto}. Contacte al administrador para renovar.");
         }
 
         // Verificar que el usuario esté activo

@@ -23,7 +23,6 @@
 @section('content')
 
     <div class="max-w-5xl mx-auto">
-
         <div class="p-8 mb-6 bg-white shadow-lg rounded-3xl">
             <div class="flex items-start justify-between mb-6">
                 <div class="flex gap-4">
@@ -50,6 +49,10 @@
                     </div>
                 </div>
                 <div class="flex gap-2">
+                    <a href="{{ route('empresas.licencias.renovar', $empresa) }}"
+                        class="px-4 py-2 text-sm text-white bg-cyan-600 rounded-xl hover:bg-cyan-700">
+                        🔄 Renovar Licencia
+                    </a>
                     <a href="{{ route('empresa.cambiar', $empresa) }}"
                         class="px-4 py-2 text-sm font-medium text-white transition bg-green-500 rounded-xl hover:bg-green-600">
                         🚪 Entrar

@@ -10,6 +10,7 @@ use App\Models\Pagare;
 use App\Models\CajaApertura;
 use App\Models\CajaMovimiento;
 use App\Models\Carrito;
+use App\Models\Categoria;
 use App\Models\Producto;
 use App\Models\Cliente;
 use App\Models\FormaPago;
@@ -63,24 +64,40 @@ class VentaController extends Controller
                 return redirect()->route('dashboard')->with('error', '❌ No tienes permiso para acceder al punto de venta.');
             }
 
+            // 🔥 NUEVA VALIDACIÓN: Verificar cajas abiertas de días anteriores
+            $cajasAbiertasAntiguas = $this->validarCajasAbiertasAntiguas($sucursalId, $user);
+            
+            if ($cajasAbiertasAntiguas['tiene_pendientes']) {
+                if ($user->can('cerrar_caja') || $user->hasRole('Super Admin')) {
+                    return redirect()->route('cajas.apertura')
+                        ->with('warning', '⚠️ ' . $cajasAbiertasAntiguas['mensaje'] . ' Por favor, ciérralas antes de continuar.');
+                } else {
+                    return redirect()->route('dashboard')
+                        ->with('error', '🔒 ' . $cajasAbiertasAntiguas['mensaje'] . ' Solicita al administrador que las cierre.');
+                }
+            }
+
             $cajasActivas = collect();
             $cajaAbierta = null;
 
-            // Obtener cajas según rol
+            // Obtener cajas según rol - SOLO DEL DÍA ACTUAL
             if ($user->hasRole('Vendedor') || $user->hasRole('Cobrador')) {
                 $cajasActivas = CajaApertura::where('sucursal_id', $sucursalId)
                     ->where('estado', 'abierta')
+                    ->whereDate('fecha', today())  // 🔥 SOLO DEL DÍA ACTUAL
                     ->with(['caja', 'usuario'])
                     ->get();
             } elseif ($user->hasRole('Cajero')) {
                 $cajasActivas = CajaApertura::where('sucursal_id', $sucursalId)
                     ->where('user_id', $user->id)
                     ->where('estado', 'abierta')
+                    ->whereDate('fecha', today())  // 🔥 SOLO DEL DÍA ACTUAL
                     ->with(['caja', 'usuario'])
                     ->get();
             } else {
                 $cajasActivas = CajaApertura::where('sucursal_id', $sucursalId)
                     ->where('estado', 'abierta')
+                    ->whereDate('fecha', today())  // 🔥 SOLO DEL DÍA ACTUAL
                     ->with(['caja', 'usuario'])
                     ->get();
             }
@@ -91,9 +108,9 @@ class VentaController extends Controller
 
             if ($cajasActivas->isEmpty()) {
                 if ($user->can('abrir_caja')) {
-                    return redirect()->route('cajas.apertura')->with('warning', '🔓 Debes abrir una caja.');
+                    return redirect()->route('cajas.apertura')->with('warning', '🔓 Debes abrir una caja para hoy.');
                 }
-                return redirect()->route('dashboard')->with('error', '🔒 No hay caja abierta. Solicita al administrador que abra una caja.');
+                return redirect()->route('dashboard')->with('error', '🔒 No hay caja abierta para hoy. Solicita al administrador que abra una caja.');
             }
 
             $productos = Producto::where('empresa_id', $empresaId)
@@ -103,7 +120,7 @@ class VentaController extends Controller
                 ->orderBy('nombre')
                 ->get();
 
-            $categorias = \App\Models\Categoria::where('empresa_id', $empresaId)
+            $categorias = Categoria::where('empresa_id', $empresaId)
                 ->where('activo', true)
                 ->get();
 
@@ -112,7 +129,7 @@ class VentaController extends Controller
                 ->orderBy('nombre')
                 ->get();
 
-            $formasPago = \App\Models\FormaPago::where('empresa_id', $empresaId)
+            $formasPago = FormaPago::where('empresa_id', $empresaId)
                 ->where('activo', true)
                 ->orderBy('orden')
                 ->get();
@@ -346,8 +363,13 @@ class VentaController extends Controller
             }
 
             $plazosDias = [
-                '7_dias' => 7, '15_dias' => 15, '1_mes' => 30,
-                '2_meses' => 60, '3_meses' => 90, '6_meses' => 180, '1_ano' => 365
+                '7_dias' => 7,
+                '15_dias' => 15,
+                '1_mes' => 30,
+                '2_meses' => 60,
+                '3_meses' => 90,
+                '6_meses' => 180,
+                '1_ano' => 365
             ];
 
             $dias = $plazosDias[$request->plazo];
@@ -540,7 +562,9 @@ class VentaController extends Controller
 
             if ($venta->estado === 'cancelada') {
                 return response()->json([
-                    'success' => false, 'icon' => 'warning', 'message' => 'La venta ya está cancelada'
+                    'success' => false,
+                    'icon' => 'warning',
+                    'message' => 'La venta ya está cancelada'
                 ], 400);
             }
 
@@ -554,7 +578,8 @@ class VentaController extends Controller
             DB::commit();
 
             return response()->json([
-                'success' => true, 'icon' => 'success',
+                'success' => true,
+                'icon' => 'success',
                 'message' => "Venta {$venta->folio} cancelada correctamente. Stock restaurado."
             ]);
 
@@ -562,9 +587,43 @@ class VentaController extends Controller
             DB::rollBack();
             Log::error('Error al cancelar venta: ' . $e->getMessage());
             return response()->json([
-                'success' => false, 'icon' => 'error',
+                'success' => false,
+                'icon' => 'error',
                 'message' => 'Error al cancelar la venta: ' . $e->getMessage()
             ], 500);
         }
+    }
+    private function validarCajasAbiertasAntiguas($sucursalId, $user)
+    {
+        $query = CajaApertura::where('sucursal_id', $sucursalId)
+            ->where('estado', 'abierta')
+            ->whereDate('fecha', '<', today());  // Fechas anteriores a hoy
+
+        // Filtrar por usuario según rol
+        if (!$user->hasRole('Super Admin')) {
+            $query->where('user_id', $user->id);
+        }
+
+        $cajasAntiguas = $query->with(['caja', 'usuario'])->get();
+
+        if ($cajasAntiguas->isEmpty()) {
+            return [
+                'tiene_pendientes' => false,
+                'mensaje' => '',
+                'cajas' => collect()
+            ];
+        }
+
+        $fechas = $cajasAntiguas->pluck('fecha')->map(function ($fecha) {
+            return $fecha->format('d/m/Y');
+        })->implode(', ');
+
+        $mensaje = 'Existen cajas abiertas de días anteriores (' . $fechas . ').';
+
+        return [
+            'tiene_pendientes' => true,
+            'mensaje' => $mensaje,
+            'cajas' => $cajasAntiguas
+        ];
     }
 }

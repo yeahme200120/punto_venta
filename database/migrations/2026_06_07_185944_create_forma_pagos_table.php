@@ -13,17 +13,15 @@ return new class extends Migration
     {
         Schema::create('forma_pagos', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('empresa_id')->constrained()->onDelete('cascade');
             $table->string('clave', 50)->unique();
             $table->string('nombre', 100);
             $table->string('icono', 10)->nullable();
             $table->integer('orden')->default(0);
-            $table->boolean('activo')->default(true);
             $table->boolean('requiere_referencia')->default(false);
             $table->boolean('requiere_autorizacion')->default(false);
+            $table->boolean('activo_global')->default(true);
             $table->timestamps();
             
-            $table->unique(['empresa_id', 'clave']);
         });
     }
 

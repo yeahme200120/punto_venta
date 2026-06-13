@@ -4,33 +4,129 @@
 namespace App\Http\Controllers;
 
 use App\Models\FormaPago;
+use App\Models\Empresa;
+use App\Models\EmpresaFormaPago;
 use App\Traits\ActivaTrait;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\DB;
 
 class FormaPagoController extends Controller
 {
     use ActivaTrait;
 
     /**
-     * Listado de formas de pago de la empresa activa
+     * Listado de formas de pago GLOBALES (para administración)
      */
     public function index()
     {
         try {
-            $empresaId = $this->empresaActivaId();
-            if (!$empresaId) {
-                return redirect()->route('dashboard')->with('error', 'No hay una empresa activa.');
-            }
-
-            $formasPago = FormaPago::where('empresa_id', $empresaId)
-                ->orderBy('orden')
+            $formasPago = FormaPago::orderBy('orden')
                 ->paginate(15);
 
             return view('formas_pago.index', compact('formasPago'));
         } catch (\Exception $e) {
             Log::error('Error al listar formas de pago: ' . $e->getMessage());
             return back()->with('error', 'Error al cargar las formas de pago.');
+        }
+    }
+
+    /**
+     * Configuración de formas de pago por empresa
+     */
+    public function configurarPorEmpresa($empresaId = null)
+    {
+        try {
+            $empresaId = $empresaId ?? $this->empresaActivaId();
+            $empresa = Empresa::findOrFail($empresaId);
+            
+            // Todas las formas de pago globales activas
+            $todasFormas = FormaPago::where('activo_global', true)
+                ->orderBy('orden')
+                ->get();
+            
+            // Configuraciones actuales de la empresa (de la tabla pivote)
+            $configuraciones = EmpresaFormaPago::where('empresa_id', $empresaId)
+                ->pluck('activo', 'forma_pago_id')
+                ->toArray();
+            
+            // Órdenes personalizados
+            $ordenes = EmpresaFormaPago::where('empresa_id', $empresaId)
+                ->pluck('orden_empresa', 'forma_pago_id')
+                ->toArray();
+            
+            return view('formas_pago.configurar-empresa', compact('empresa', 'todasFormas', 'configuraciones', 'ordenes'));
+        } catch (\Exception $e) {
+            Log::error('Error al configurar formas de pago por empresa: ' . $e->getMessage());
+            return back()->with('error', 'Error al cargar la configuración.');
+        }
+    }
+
+    /**
+     * Guardar configuración de formas de pago por empresa
+     */
+    public function actualizarConfiguracion(Request $request, $empresaId)
+    {
+        try {
+            $empresa = Empresa::findOrFail($empresaId);
+            $formasActivas = $request->input('formas_activas', []);
+            
+            // Obtener todas las formas de pago globales activas
+            $todasFormas = FormaPago::where('activo_global', true)->get();
+            
+            foreach ($todasFormas as $forma) {
+                $activo = in_array($forma->id, $formasActivas);
+                $orden = $request->input("orden_{$forma->id}", $forma->orden);
+                
+                EmpresaFormaPago::updateOrCreate(
+                    [
+                        'empresa_id' => $empresaId,
+                        'forma_pago_id' => $forma->id
+                    ],
+                    [
+                        'activo' => $activo,
+                        'orden_empresa' => $orden
+                    ]
+                );
+            }
+            
+            return redirect()->route('formas_pago.configurar.empresa', $empresaId)
+                ->with('success', 'Configuración actualizada correctamente.');
+        } catch (\Exception $e) {
+            Log::error('Error al actualizar configuración: ' . $e->getMessage());
+            return back()->with('error', 'Error al guardar la configuración.');
+        }
+    }
+
+    /**
+     * Obtener formas de pago activas para la empresa actual
+     */
+    public function getActivas()
+    {
+        try {
+            $empresaId = $this->empresaActivaId();
+            
+            // Obtener formas de pago activas para la empresa desde la tabla pivote
+            $formasPago = EmpresaFormaPago::where('empresa_id', $empresaId)
+                ->where('activo', true)
+                ->with('formaPago')
+                ->orderBy('orden_empresa')
+                ->get()
+                ->pluck('formaPago');
+            
+            if (request()->wantsJson()) {
+                return response()->json([
+                    'success' => true,
+                    'data' => $formasPago
+                ]);
+            }
+            
+            return $formasPago;
+        } catch (\Exception $e) {
+            Log::error('Error al obtener formas de pago activas: ' . $e->getMessage());
+            return request()->wantsJson() 
+                ? response()->json(['success' => false, 'message' => 'Error'], 500)
+                : collect();
         }
     }
 
@@ -48,36 +144,47 @@ class FormaPagoController extends Controller
     }
 
     /**
-     * Guardar nueva forma de pago
+     * Guardar nueva forma de pago (GLOBAL)
      */
     public function store(Request $request)
     {
-        $empresaId = $this->empresaActivaId();
-        if (!$empresaId) {
-            return back()->with('error', 'No hay una empresa activa.');
-        }
-
         $validated = $request->validate([
-            'clave' => 'required|string|max:50|unique:forma_pagos,clave,NULL,id,empresa_id,' . $empresaId,
+            'clave' => 'required|string|max:50|unique:forma_pagos,clave',
             'nombre' => 'required|string|max:100',
             'icono' => 'nullable|string|max:10',
             'orden' => 'nullable|integer|min:0',
-            'activo' => 'boolean',
+            'activo_global' => 'boolean',
             'requiere_referencia' => 'boolean',
             'requiere_autorizacion' => 'boolean',
         ]);
 
         try {
-            FormaPago::create([
-                'empresa_id' => $empresaId,
+            $formaPago = FormaPago::create([
                 'clave' => $validated['clave'],
                 'nombre' => $validated['nombre'],
                 'icono' => $validated['icono'] ?? null,
                 'orden' => $validated['orden'] ?? 0,
-                'activo' => $request->has('activo'),
+                'activo_global' => $request->has('activo_global'),
                 'requiere_referencia' => $request->has('requiere_referencia'),
                 'requiere_autorizacion' => $request->has('requiere_autorizacion'),
             ]);
+
+            // 🔥 Si la nueva forma es globalmente activa, agregarla a todas las empresas existentes
+            if ($formaPago->activo_global) {
+                $empresas = Empresa::all();
+                foreach ($empresas as $empresa) {
+                    EmpresaFormaPago::updateOrCreate(
+                        [
+                            'empresa_id' => $empresa->id,
+                            'forma_pago_id' => $formaPago->id
+                        ],
+                        [
+                            'activo' => true,
+                            'orden_empresa' => $formaPago->orden
+                        ]
+                    );
+                }
+            }
 
             return redirect()->route('formas_pago.index')
                 ->with('success', 'Forma de pago creada correctamente.');
@@ -93,11 +200,6 @@ class FormaPagoController extends Controller
     public function edit(FormaPago $formaPago)
     {
         try {
-            $empresaId = $this->empresaActivaId();
-            if ($formaPago->empresa_id != $empresaId) {
-                return redirect()->route('formas_pago.index')
-                    ->with('error', 'No tienes permiso para editar esta forma de pago.');
-            }
             return view('formas_pago.edit', compact('formaPago'));
         } catch (\Exception $e) {
             Log::error('Error al cargar edición: ' . $e->getMessage());
@@ -105,71 +207,63 @@ class FormaPagoController extends Controller
         }
     }
 
+    /**
+     * Actualizar forma de pago (GLOBAL)
+     */
     public function update(Request $request, FormaPago $formaPago)
     {
-        // Convertir checkboxes a booleanos antes de validar
         $request->merge([
-            'activo' => $request->has('activo'),
+            'activo_global' => $request->has('activo_global'),
             'requiere_referencia' => $request->has('requiere_referencia'),
             'requiere_autorizacion' => $request->has('requiere_autorizacion'),
         ]);
 
-        Log::info('Update iniciado', ['formaPago_id' => $formaPago->id, 'user_id' => auth()->id()]);
-
-        $empresaId = $this->empresaActivaId();
-        Log::info('Empresa activa', ['empresaId' => $empresaId]);
-
-        if ($formaPago->empresa_id != $empresaId) {
-            Log::warning('Permiso denegado por empresa', ['forma_empresa' => $formaPago->empresa_id, 'session_empresa' => $empresaId]);
-            return redirect()->route('formas_pago.index')->with('error', 'No tienes permiso para editar esta forma de pago.');
-        }
-
-        Log::info('Validación iniciada', ['request_all' => $request->all()]);
-
         try {
             $validated = $request->validate([
-                'clave' => 'required|string|max:50|unique:forma_pagos,clave,' . $formaPago->id . ',id,empresa_id,' . $empresaId,
+                'clave' => 'required|string|max:50|unique:forma_pagos,clave,' . $formaPago->id,
                 'nombre' => 'required|string|max:100',
                 'icono' => 'nullable|string|max:10',
                 'orden' => 'nullable|integer|min:0',
-                'activo' => 'boolean',
+                'activo_global' => 'boolean',
                 'requiere_referencia' => 'boolean',
                 'requiere_autorizacion' => 'boolean',
             ]);
-            Log::info('Validación aprobada', $validated);
 
-            $formaPago->update([
-                'clave' => $validated['clave'],
-                'nombre' => $validated['nombre'],
-                'icono' => $validated['icono'] ?? null,
-                'orden' => $validated['orden'] ?? 0,
-                'activo' => $validated['activo'],
-                'requiere_referencia' => $validated['requiere_referencia'],
-                'requiere_autorizacion' => $validated['requiere_autorizacion'],
-            ]);
-            Log::info('Update ejecutado correctamente');
+            $oldActivoGlobal = $formaPago->activo_global;
+            $formaPago->update($validated);
 
-            return redirect()->route('formas_pago.index')->with('success', 'Forma de pago actualizada correctamente.');
-        } catch (\Illuminate\Validation\ValidationException $e) {
-            Log::error('Error de validación', $e->errors());
-            return back()->withErrors($e->errors())->withInput();
+            // 🔥 Si cambió el estado global, actualizar empresas
+            if ($oldActivoGlobal != $formaPago->activo_global) {
+                $empresas = Empresa::all();
+                foreach ($empresas as $empresa) {
+                    EmpresaFormaPago::updateOrCreate(
+                        [
+                            'empresa_id' => $empresa->id,
+                            'forma_pago_id' => $formaPago->id
+                        ],
+                        [
+                            'activo' => $formaPago->activo_global,
+                            'orden_empresa' => $formaPago->orden
+                        ]
+                    );
+                }
+            }
+
+            return redirect()->route('formas_pago.index')
+                ->with('success', 'Forma de pago actualizada correctamente.');
         } catch (\Exception $e) {
-            Log::error('Excepción en update', ['message' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
+            Log::error('Error al actualizar forma de pago: ' . $e->getMessage());
             return back()->withInput()->with('error', 'Error al actualizar la forma de pago.');
         }
     }
 
     public function destroy(FormaPago $formaPago)
     {
-        $empresaId = $this->empresaActivaId();
-        if ($formaPago->empresa_id != $empresaId) {
-            return redirect()->route('formas_pago.index')
-                ->with('error', 'No tienes permiso para eliminar esta forma de pago.');
-        }
-
-        // Verificar si tiene registros relacionados en pago_detalles
-        if ($formaPago->pagoDetalles()->exists()) {
-            return back()->with('error', 'No se puede eliminar porque tiene movimientos asociados.');
+        // Verificar si tiene registros relacionados
+        $hasRelations = EmpresaFormaPago::where('forma_pago_id', $formaPago->id)->exists();
+            
+        if ($hasRelations) {
+            return back()->with('error', 'No se puede eliminar porque está configurada en una o más empresas.');
         }
 
         try {
@@ -183,23 +277,33 @@ class FormaPagoController extends Controller
     }
 
     /**
-     * Activar/desactivar forma de pago
+     * Activar/desactivar forma de pago (GLOBAL)
      */
     public function toggleActivo(FormaPago $formaPago)
     {
-        $empresaId = $this->empresaActivaId();
-        if ($formaPago->empresa_id != $empresaId) {
-            return response()->json(['success' => false, 'message' => 'No autorizado'], 403);
-        }
-
         try {
-            $formaPago->activo = !$formaPago->activo;
+            $formaPago->activo_global = !$formaPago->activo_global;
             $formaPago->save();
+
+            // 🔥 Sincronizar con todas las empresas
+            $empresas = Empresa::all();
+            foreach ($empresas as $empresa) {
+                EmpresaFormaPago::updateOrCreate(
+                    [
+                        'empresa_id' => $empresa->id,
+                        'forma_pago_id' => $formaPago->id
+                    ],
+                    [
+                        'activo' => $formaPago->activo_global,
+                        'orden_empresa' => $formaPago->orden
+                    ]
+                );
+            }
 
             return response()->json([
                 'success' => true,
-                'activo' => $formaPago->activo,
-                'message' => $formaPago->activo ? 'Forma de pago activada' : 'Forma de pago desactivada'
+                'activo' => $formaPago->activo_global,
+                'message' => $formaPago->activo_global ? 'Forma de pago activada' : 'Forma de pago desactivada'
             ]);
         } catch (\Exception $e) {
             return response()->json(['success' => false, 'message' => 'Error al cambiar estado'], 500);

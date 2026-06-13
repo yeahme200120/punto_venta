@@ -7,6 +7,7 @@ use App\Models\CajaApertura;
 use App\Models\CajaArqueo;
 use App\Models\CajaMovimiento;
 use App\Models\CajaTransferencia;
+use App\Models\FormaPago;
 use App\Models\Sucursal;
 use App\Models\User;
 use App\Services\CajaService;
@@ -153,11 +154,33 @@ class CajaController extends Controller
                 return redirect()->route('dashboard')->with('error', 'No hay una sucursal activa.');
             }
 
-            // Para Super Admin: ver TODAS las cajas abiertas en la sucursal
+            // 🔥 NUEVO: Obtener cajas abiertas de días anteriores (para mostrar advertencia)
+            $cajasAnteriores = CajaApertura::where('empresa_id', $empresaId)
+                ->where('sucursal_id', $sucursalId)
+                ->where('estado', 'abierta')
+                ->whereDate('fecha', '<', today())
+                ->when(!$user->hasRole('Super Admin') && !$user->hasRole('Administrador'), function ($q) use ($userId) {
+                    return $q->where('user_id', $userId);
+                })
+                ->with(['caja', 'usuario'])
+                ->orderBy('fecha', 'asc')
+                ->get();
+
+            // 🔥 NUEVO: Verificar si hay cajas anteriores y mostrar mensaje
+            if ($cajasAnteriores->isNotEmpty()) {
+                $fechas = $cajasAnteriores->pluck('fecha')->map(function ($f) {
+                    return $f->format('d/m/Y');
+                })->unique()->implode(', ');
+
+                session()->flash('warning', "⚠️ Hay cajas abiertas de días anteriores ({$fechas}). Debes cerrarlas antes de abrir nuevas cajas.");
+            }
+
+            // 🔥 MODIFICADO: Filtrar solo cajas del DÍA ACTUAL
             if ($user->hasRole('Super Admin')) {
                 $aperturasActivas = CajaApertura::where('empresa_id', $empresaId)
                     ->where('sucursal_id', $sucursalId)
                     ->where('estado', 'abierta')
+                    ->whereDate('fecha', today())  // 🔥 SOLO DEL DÍA ACTUAL
                     ->with(['caja', 'usuario'])
                     ->orderBy('created_at', 'desc')
                     ->get();
@@ -165,15 +188,18 @@ class CajaController extends Controller
                 $tieneAperturaPropia = $aperturasActivas->contains('user_id', $userId);
                 $aperturaAnterior = null;
             } else {
-                // Usuario normal: solo su apertura
+                // Usuario normal: solo su apertura del día actual
                 $aperturasActivas = CajaApertura::where('empresa_id', $empresaId)
                     ->where('sucursal_id', $sucursalId)
                     ->where('user_id', $userId)
                     ->where('estado', 'abierta')
+                    ->whereDate('fecha', today())  // 🔥 SOLO DEL DÍA ACTUAL
                     ->with(['caja', 'usuario'])
                     ->get();
 
                 $tieneAperturaPropia = $aperturasActivas->isNotEmpty();
+
+                // Buscar apertura anterior del mismo usuario (días anteriores)
                 $aperturaAnterior = CajaApertura::where('empresa_id', $empresaId)
                     ->where('sucursal_id', $sucursalId)
                     ->where('user_id', $userId)
@@ -182,7 +208,7 @@ class CajaController extends Controller
                     ->first();
             }
 
-            // En aperturaIndex, modifica la obtención de cajas disponibles
+            // 🔥 MODIFICADO: Cajas disponibles para apertura (excluyendo las que ya tienen apertura activa HOY)
             $cajasDisponibles = Caja::where('empresa_id', $empresaId)
                 ->where('sucursal_id', $sucursalId)
                 ->where('activo', true)
@@ -190,7 +216,7 @@ class CajaController extends Controller
                     $esAdmin = $user->hasRole('Super Admin') || $user->hasRole('Administrador');
 
                     if ($esAdmin) {
-                        // Admins: solo excluir si ya tienen ESA misma caja abierta
+                        // Admins: solo excluir si ya tienen ESA misma caja abierta HOY
                         $q->whereNotExists(function ($sub) use ($userId, $empresaId, $sucursalId) {
                             $sub->select(DB::raw(1))
                                 ->from('caja_aperturas')
@@ -198,7 +224,8 @@ class CajaController extends Controller
                                 ->where('caja_aperturas.user_id', $userId)
                                 ->where('caja_aperturas.empresa_id', $empresaId)
                                 ->where('caja_aperturas.sucursal_id', $sucursalId)
-                                ->where('caja_aperturas.estado', 'abierta');
+                                ->where('caja_aperturas.estado', 'abierta')
+                                ->whereDate('caja_aperturas.fecha', today());  // 🔥 SOLO HOY
                         });
                     } else {
                         // Usuarios normales: regla estándar
@@ -207,7 +234,8 @@ class CajaController extends Controller
                                 ->orWhere(function ($q3) {
                                     $q3->where('permite_multiple', false)
                                         ->whereDoesntHave('aperturaActual', function ($q4) {
-                                            $q4->where('estado', 'abierta');
+                                            $q4->where('estado', 'abierta')
+                                                ->whereDate('fecha', today());  // 🔥 SOLO HOY
                                         });
                                 });
                         });
@@ -215,10 +243,16 @@ class CajaController extends Controller
                 })
                 ->get();
 
-            return view('cajas.apertura', compact('aperturasActivas', 'cajasDisponibles', 'tieneAperturaPropia', 'aperturaAnterior'));
+            return view('cajas.apertura', compact(
+                'aperturasActivas',
+                'cajasDisponibles',
+                'tieneAperturaPropia',
+                'aperturaAnterior',
+                'cajasAnteriores'  // 🔥 Pasar a la vista
+            ));
         } catch (\Exception $e) {
             Log::error('Error al cargar apertura: ' . $e->getMessage());
-            return back()->with('error', 'Error al cargar la apertura de caja.');
+            return back()->with('error', 'Error al cargar la apertura de caja: ' . $e->getMessage());
         }
     }
 
@@ -234,6 +268,7 @@ class CajaController extends Controller
 
         $sucursalId = $this->sucursalActivaId();
         $empresaId = $this->empresaActivaId();
+        $user = auth()->user();
 
         if (!$sucursalId) {
             $error = 'No hay una sucursal activa.';
@@ -249,18 +284,90 @@ class CajaController extends Controller
                 : back()->with('error', $error);
         }
 
+        // 🔥 NUEVO: Verificar si hay cajas abiertas de días anteriores
+        $cajasAnteriores = CajaApertura::where('empresa_id', $empresaId)
+            ->where('sucursal_id', $sucursalId)
+            ->where('estado', 'abierta')
+            ->whereDate('fecha', '<', today())
+            ->when(!$user->hasRole('Super Admin') && !$user->hasRole('Administrador'), function ($q) use ($user) {
+                return $q->where('user_id', $user->id);
+            })
+            ->exists();
+
+        if ($cajasAnteriores) {
+            $error = '❌ Hay cajas abiertas de días anteriores. Debes cerrarlas antes de abrir una nueva caja.';
+            return $isAjax
+                ? response()->json(['success' => false, 'message' => $error], 400)
+                : back()->with('error', $error);
+        }
+
+        // 🔥 NUEVO: Verificar caja abierta HOY - SOLO para usuarios normales (NO Admins)
+        $esSuperAdmin = $user->hasRole('Super Admin');
+        $esAdmin = $user->hasRole('Administrador');
+
+        if (!$esSuperAdmin && !$esAdmin) {
+            // Solo aplicar la restricción de "una caja por día" para usuarios normales
+            $aperturaHoy = CajaApertura::where('user_id', auth()->id())
+                ->where('sucursal_id', $sucursalId)
+                ->where('empresa_id', $empresaId)
+                ->where('estado', 'abierta')
+                ->whereDate('fecha', today())
+                ->exists();
+
+            if ($aperturaHoy) {
+                $error = '❌ Ya tienes una caja abierta para hoy. No puedes abrir otra.';
+                return $isAjax
+                    ? response()->json(['success' => false, 'message' => $error], 400)
+                    : back()->with('error', $error);
+            }
+        } else {
+            // Para Super Admin y Administrador: solo verificar que no estén abriendo la MISMA caja dos veces
+            $mismaCajaAbierta = CajaApertura::where('user_id', auth()->id())
+                ->where('caja_id', $validated['caja_id'])
+                ->where('sucursal_id', $sucursalId)
+                ->where('empresa_id', $empresaId)
+                ->where('estado', 'abierta')
+                ->whereDate('fecha', today())
+                ->exists();
+
+            if ($mismaCajaAbierta) {
+                $error = '❌ Ya tienes esta caja abierta para hoy. No puedes abrir la misma caja dos veces.';
+                return $isAjax
+                    ? response()->json(['success' => false, 'message' => $error], 400)
+                    : back()->with('error', $error);
+            }
+
+            // Verificar si la caja permite múltiples aperturas (solo si no es Admin)
+            $caja = Caja::find($validated['caja_id']);
+            if (!$caja->permite_multiple) {
+                $cajaOcupada = CajaApertura::where('caja_id', $validated['caja_id'])
+                    ->where('sucursal_id', $sucursalId)
+                    ->where('empresa_id', $empresaId)
+                    ->where('estado', 'abierta')
+                    ->whereDate('fecha', today())
+                    ->where('user_id', '!=', auth()->id())
+                    ->exists();
+
+                if ($cajaOcupada) {
+                    $error = '❌ Esta caja no permite múltiples aperturas y ya está siendo utilizada por otro usuario.';
+                    return $isAjax
+                        ? response()->json(['success' => false, 'message' => $error], 400)
+                        : back()->with('error', $error);
+                }
+            }
+        }
+
         try {
-            // 🔥 IMPORTANTE: Los 6 argumentos en el orden correcto
             $apertura = CajaService::abrirCaja(
-                $validated['caja_id'],      // $cajaId
-                auth()->id(),                // $userId
-                $sucursalId,                 // $sucursalId
-                $empresaId,                  // $empresaId
-                $validated['monto_inicial'], // $montoInicial
-                $validated['observaciones'] ?? null  // $observaciones
+                $validated['caja_id'],
+                auth()->id(),
+                $sucursalId,
+                $empresaId,
+                $validated['monto_inicial'],
+                $validated['observaciones'] ?? null
             );
 
-            $mensaje = 'Caja abierta correctamente.';
+            $mensaje = '✅ Caja abierta correctamente para hoy.';
 
             if ($isAjax) {
                 return response()->json([
@@ -284,60 +391,163 @@ class CajaController extends Controller
     public function operaciones()
     {
         try {
+            Log::info('=== INICIO OPERACIONES ===');
+
             $empresaId = $this->empresaActivaId();
             $sucursalId = $this->sucursalActivaId();
             $userId = auth()->id();
             $user = auth()->user();
 
+            Log::info('Datos básicos:', [
+                'user_id' => $userId,
+                'user_email' => $user->email,
+                'user_roles' => $user->getRoleNames()->implode(', '),
+                'empresa_id' => $empresaId,
+                'sucursal_id' => $sucursalId
+            ]);
+
             if (!$empresaId) {
+                Log::warning('No hay empresa activa');
                 return redirect()->route('dashboard')->with('error', 'No hay una empresa activa.');
             }
 
-            // Para Super Admin: obtener la primera apertura abierta de la sucursal (o todas)
-            if ($user->hasRole('Super Admin')) {
-                // Opción 1: Mostrar todas las aperturas abiertas en lugar de una sola
-                $aperturas = CajaApertura::where('empresa_id', $empresaId)
+            if (!$sucursalId) {
+                Log::warning('No hay sucursal activa');
+                return redirect()->route('dashboard')->with('error', 'No hay una sucursal activa.');
+            }
+
+            // 🔥 VARIABLE PARA ALMACENAR LA APERTURA SELECCIONADA
+            $apertura = null;
+            $todasAperturas = collect();
+
+            // Para Super Admin y Administrador: pueden ver todas las cajas abiertas de la sucursal
+            if ($user->hasRole('Super Admin') || $user->hasRole('Administrador')) {
+                Log::info('Usuario es Super Admin o Administrador, buscando TODAS las cajas abiertas');
+
+                $todasAperturas = CajaApertura::where('empresa_id', $empresaId)
                     ->where('sucursal_id', $sucursalId)
                     ->where('estado', 'abierta')
                     ->with(['caja', 'usuario'])
+                    ->orderBy('created_at', 'desc')
                     ->get();
 
-                if ($aperturas->isEmpty()) {
+                Log::info('Cajas abiertas encontradas:', [
+                    'total' => $todasAperturas->count(),
+                    'ids' => $todasAperturas->pluck('id')->toArray(),
+                    'usuarios' => $todasAperturas->map(function ($a) {
+                        return $a->usuario->name . ' (' . $a->usuario->email . ')';
+                    })->toArray(),
+                    'cajas' => $todasAperturas->map(function ($a) {
+                        return $a->caja->nombre . ' (' . $a->caja->codigo . ')';
+                    })->toArray()
+                ]);
+
+                if ($todasAperturas->isEmpty()) {
+                    Log::warning('No hay cajas abiertas en esta sucursal');
                     return redirect()->route('cajas.apertura')
                         ->with('error', 'No hay cajas abiertas en esta sucursal.');
                 }
 
-                // Si hay múltiples, podrías mostrar un selector o tomar la primera
-                $apertura = $aperturas->first(); // o pasar $aperturas a la vista
+                // Obtener apertura seleccionada de sesión o usar la primera
+                $aperturaIdSession = session('caja_operacion_id');
+                Log::info('Apertura en sesión:', ['session_apertura_id' => $aperturaIdSession]);
+
+                if ($aperturaIdSession) {
+                    $apertura = $todasAperturas->firstWhere('id', $aperturaIdSession);
+                    Log::info('Apertura encontrada por sesión:', ['encontrada' => $apertura ? 'SÍ' : 'NO']);
+                }
+
+                if (!$apertura) {
+                    $apertura = $todasAperturas->first();
+                    session(['caja_operacion_id' => $apertura->id]);
+                    Log::info('Seleccionando primera apertura:', ['apertura_id' => $apertura->id]);
+                }
             } else {
-                // Usuario normal: solo su propia apertura
+                Log::info('Usuario normal (no Super Admin/Admin), buscando SOLO su propia caja');
+
                 $apertura = CajaApertura::where('empresa_id', $empresaId)
                     ->where('sucursal_id', $sucursalId)
                     ->where('user_id', $userId)
                     ->where('estado', 'abierta')
+                    ->whereDate('fecha', today())
                     ->first();
 
+                Log::info('Caja del día actual encontrada:', [
+                    'encontrada' => $apertura ? 'SÍ' : 'NO',
+                    'id' => $apertura->id ?? 'N/A',
+                    'caja' => $apertura->caja->nombre ?? 'N/A',
+                    'fecha' => $apertura ? $apertura->fecha->format('d/m/Y') : 'N/A'
+                ]);
+
                 if (!$apertura) {
+                    // Buscar si tiene alguna caja abierta de días anteriores
+                    $aperturaAnterior = CajaApertura::where('empresa_id', $empresaId)
+                        ->where('sucursal_id', $sucursalId)
+                        ->where('user_id', $userId)
+                        ->where('estado', 'abierta')
+                        ->first();
+
+                    if ($aperturaAnterior) {
+                        Log::warning('Usuario tiene caja abierta de día anterior:', [
+                            'fecha' => $aperturaAnterior->fecha->format('d/m/Y'),
+                            'caja_id' => $aperturaAnterior->id
+                        ]);
+                        return redirect()->route('cajas.apertura')
+                            ->with('error', 'Tienes una caja abierta del día ' . $aperturaAnterior->fecha->format('d/m/Y') . '. Debes cerrarla antes de operar.');
+                    }
+
+                    Log::warning('Usuario no tiene ninguna caja abierta');
                     return redirect()->route('cajas.apertura')
-                        ->with('error', 'No tienes una caja abierta. Debes abrir una caja primero.');
+                        ->with('error', 'No tienes una caja abierta para hoy. Debes abrir una caja primero.');
                 }
+
+                $todasAperturas = collect([$apertura]);
             }
 
-            // Resto del código...
+            // Verificar que $apertura no sea null
+            if (!$apertura) {
+                Log::error('CRÍTICO: $apertura es null después de toda la lógica');
+                return redirect()->route('cajas.apertura')
+                    ->with('error', 'No se pudo identificar una caja activa.');
+            }
+
+            Log::info('Apertura seleccionada final:', [
+                'apertura_id' => $apertura->id,
+                'caja_nombre' => $apertura->caja->nombre,
+                'caja_codigo' => $apertura->caja->codigo,
+                'usuario' => $apertura->usuario->name,
+                'fecha' => $apertura->fecha->format('d/m/Y'),
+                'saldo_actual' => $apertura->saldoActual()
+            ]);
+
+            // Obtener movimientos de la apertura seleccionada
             $movimientos = CajaMovimiento::where('caja_apertura_id', $apertura->id)
                 ->orderBy('created_at', 'desc')
                 ->paginate(20);
 
-            $resumen = CajaService::resumenDia($apertura->id);
-            $formasPago = \App\Models\FormaPago::where('empresa_id', $empresaId)
-                ->where('activo', true)
-                ->orderBy('orden')
-                ->get();
+            Log::info('Movimientos encontrados:', [
+                'total' => $movimientos->total(),
+                'count' => $movimientos->count()
+            ]);
 
-            return view('cajas.operaciones', compact('apertura', 'movimientos', 'resumen', 'formasPago'));
+            $resumen = CajaService::resumenDia($apertura->id);
+            Log::info('Resumen del día:', [
+                'apertura' => $resumen['apertura'],
+                'total_ingresos' => $resumen['total_ingresos'],
+                'total_egresos' => $resumen['total_egresos'],
+                'saldo_esperado' => $resumen['saldo_esperado']
+            ]);
+
+            $formasPago = FormaPago::getActivasPorEmpresa($empresaId);
+
+            Log::info('=== FIN OPERACIONES - OK ===');
+
+            return view('cajas.operaciones', compact('apertura', 'movimientos', 'resumen', 'formasPago', 'todasAperturas'));
+
         } catch (\Exception $e) {
             Log::error('Error al cargar operaciones: ' . $e->getMessage());
-            return back()->with('error', 'Error al cargar las operaciones.');
+            Log::error('Stack trace: ' . $e->getTraceAsString());
+            return back()->with('error', 'Error al cargar las operaciones: ' . $e->getMessage());
         }
     }
 
@@ -416,9 +626,9 @@ class CajaController extends Controller
         ]);
 
         try {
-            CajaService::autorizarMovimiento(
+            // 🔥 Ya no pasamos el ID del usuario, solo la contraseña
+            $movimiento = CajaService::autorizarMovimiento(
                 $movimientoId,
-                auth()->id(),
                 $validated['password_maestra']
             );
 
@@ -483,9 +693,9 @@ class CajaController extends Controller
         ]);
 
         try {
-            CajaService::aprobarTransferencia(
+            // 🔥 Ya no pasamos el ID del usuario, solo la contraseña
+            $transferencia = CajaService::aprobarTransferencia(
                 $transferenciaId,
-                auth()->id(),
                 $validated['password_maestra']
             );
 
@@ -510,10 +720,7 @@ class CajaController extends Controller
                 return back()->with('error', 'No tienes permiso para ver este reporte.');
             }
 
-            $formasPago = \App\Models\FormaPago::where('empresa_id', $empresaId)
-                ->where('activo', true)
-                ->orderBy('orden')
-                ->get();
+            $formasPago = FormaPago::getActivasPorEmpresa($empresaId);
 
             return view('cajas.reporte-dia', compact('resumen', 'apertura', 'formasPago'));
         } catch (\Exception $e) {
@@ -550,10 +757,7 @@ class CajaController extends Controller
                     ->with('error', 'No hay una caja abierta en esta sucursal.');
             }
 
-            $formasPago = \App\Models\FormaPago::where('empresa_id', $empresaId)
-                ->where('activo', true)
-                ->orderBy('orden')
-                ->get();
+            $formasPago = FormaPago::getActivasPorEmpresa($empresaId);
 
             // Inicializar totales del sistema por forma de pago (ingresos)
             $totalesSistema = [];
@@ -618,9 +822,7 @@ class CajaController extends Controller
                 throw new \Exception('No tienes permiso para registrar arqueo en esta apertura.');
             }
 
-            $formasPago = \App\Models\FormaPago::where('empresa_id', $empresaId)
-                ->where('activo', true)
-                ->get();
+            $formasPago = FormaPago::getActivasPorEmpresa($empresaId);
 
             $montosContado = [];
             $totalContado = 0;
@@ -765,10 +967,7 @@ class CajaController extends Controller
         try {
             $arqueo->load(['cajaApertura.caja', 'usuario', 'sucursal']);
             $empresaId = $this->empresaActivaId();
-            $formasPago = \App\Models\FormaPago::where('empresa_id', $empresaId)
-                ->where('activo', true)
-                ->orderBy('orden')
-                ->get();
+            $formasPago = FormaPago::getActivasPorEmpresa($empresaId);
 
             return view('cajas.imprimir-arqueo', compact('arqueo', 'formasPago'));
         } catch (\Exception $e) {
@@ -802,9 +1001,14 @@ class CajaController extends Controller
                 throw new \Exception('La caja no está abierta.');
             }
 
-            $saldoActual = $apertura->saldoActual();
-            if ($saldoActual < $validated['monto']) {
-                throw new \Exception("Saldo insuficiente. Saldo actual: $" . number_format($saldoActual, 2));
+            $requiereAutorizacion = $validated['requiere_autorizacion'] ?? false;
+
+            // 🔥 Si requiere autorización, NO validar saldo (se validará al autorizar)
+            if (!$requiereAutorizacion) {
+                $saldoActual = $apertura->saldoActual();
+                if ($saldoActual < $validated['monto']) {
+                    throw new \Exception("Saldo insuficiente. Saldo actual: $" . number_format($saldoActual, 2));
+                }
             }
 
             $movimiento = CajaMovimiento::create([
@@ -820,9 +1024,9 @@ class CajaController extends Controller
                 'requiere_autorizacion' => $validated['requiere_autorizacion'] ?? false
             ]);
 
-            $apertura->increment('total_egresos', $validated['monto']);
-
-            if (!$movimiento->requiere_autorizacion) {
+            // 🔥 Solo actualizar totales si NO requiere autorización
+            if (!$requiereAutorizacion) {
+                $apertura->increment('total_egresos', $validated['monto']);
                 $apertura->caja->decrement('saldo_actual', $validated['monto']);
             }
 
@@ -921,24 +1125,49 @@ class CajaController extends Controller
                 throw new \Exception('Esta caja ya está cerrada o fue suspendida.');
             }
 
-            // Verificar permisos y contraseña maestra
-            if (!$user->hasRole('Super Admin') && $apertura->user_id != $user->id) {
-                throw new \Exception('No tienes permiso para cerrar esta caja.');
+            // 🔥 CORREGIDO: Verificar permisos para cerrar caja
+            $esSuperAdmin = $user->hasRole('Super Admin');
+            $esAdmin = $user->hasRole('Administrador');
+            $esPropietario = $apertura->user_id == $user->id;
+            $puedeCerrar = false;
+
+            // Super Admin puede cerrar cualquier caja
+            if ($esSuperAdmin) {
+                $puedeCerrar = true;
+            }
+            // Administrador puede cerrar cualquier caja de su empresa
+            elseif ($esAdmin) {
+                $puedeCerrar = true;
+            }
+            // Usuario normal solo puede cerrar sus propias cajas
+            elseif ($esPropietario) {
+                $puedeCerrar = true;
             }
 
-            // Super Admin o Admin cerrando caja de otro usuario
-            if ($user->hasRole('Super Admin') && $apertura->user_id != $user->id) {
+            if (!$puedeCerrar) {
+                throw new \Exception('No tienes permiso para cerrar esta caja. Solo el propietario, Administrador o Super Admin pueden cerrarla.');
+            }
+
+            // 🔥 CORREGIDO: Validar contraseña maestra para cerrar caja de otro usuario
+            $esCajaAjena = !$esPropietario;
+            if ($esCajaAjena) {
+                // Si no es su caja, exige contraseña maestra (incluso si es admin, debe poner su contraseña)
                 if (empty($validated['password_maestra'])) {
                     throw new \Exception('Debes ingresar la contraseña maestra para cerrar una caja de otro usuario.');
                 }
 
-                // Validar contraseña maestra según rol
-                $tipo = $user->hasRole('Super Admin') ? 'super_admin' : 'admin';
-                $passwordValida = \App\Models\ContrasenaMaestra::verificarPassword($user->id, $validated['password_maestra'], $tipo);
+                // Validar la contraseña de forma global (no atada al usuario logueado)
+                $adminAutorizado = \App\Models\ContrasenaMaestra::validarPasswordGlobal(
+                    $validated['password_maestra'],
+                    $apertura->empresa_id
+                );
 
-                if (!$passwordValida) {
-                    throw new \Exception('Contraseña maestra incorrecta.');
+                if (!$adminAutorizado) {
+                    throw new \Exception('Contraseña maestra incorrecta o no tienes autorización para cerrar esta caja.');
                 }
+
+                // Opcional: registrar quién autorizó el cierre (puedes guardar $adminAutorizado->id en observaciones)
+                $observacionesFinal = ($validated['observaciones'] ?? '') . " [Autorizado por: {$adminAutorizado->name} ({$adminAutorizado->email})]";
             }
 
             // Verificar retiros pendientes
@@ -977,7 +1206,7 @@ class CajaController extends Controller
 
             // Construir observaciones finales
             $observacionesFinal = $validated['observaciones'] ?? '';
-            if ($user->hasRole('Super Admin') && $apertura->user_id != $user->id) {
+            if ($esCajaAjena && ($esSuperAdmin || $esAdmin)) {
                 $observacionesFinal = "[CIERRE POR ADMIN: {$user->name}] " . $observacionesFinal;
             }
 
@@ -991,9 +1220,22 @@ class CajaController extends Controller
             DB::commit();
 
             $mensaje = '✅ Caja cerrada correctamente.';
-            if ($user->hasRole('Super Admin') && $apertura->user_id != $user->id) {
+            if ($esCajaAjena && ($esSuperAdmin || $esAdmin)) {
                 $usuarioNombre = $apertura->usuario->name ?? 'otro usuario';
-                $mensaje = "✅ Caja cerrada correctamente por Administrador. La caja pertenecía a: {$usuarioNombre}";
+                $mensaje = "✅ Caja cerrada correctamente por " . ($esSuperAdmin ? 'Super Administrador' : 'Administrador') . ". La caja pertenecía a: {$usuarioNombre}";
+            }
+
+            // Limpiar la sesión de notificación si era la última caja anterior
+            if ($apertura->fecha->lt(today())) {
+                $cajasAnterioresRestantes = CajaApertura::where('empresa_id', $empresaId)
+                    ->where('sucursal_id', $sucursalId)
+                    ->where('estado', 'abierta')
+                    ->whereDate('fecha', '<', today())
+                    ->count();
+
+                if ($cajasAnterioresRestantes === 0) {
+                    session()->forget('cajas_anteriores_notificadas');
+                }
             }
 
             if ($isAjax) {
@@ -1051,5 +1293,16 @@ class CajaController extends Controller
             }
             return back()->with('error', $e->getMessage());
         }
+    }
+    public function cambiarCajaOperacion(Request $request)
+    {
+        $request->validate([
+            'apertura_id' => 'required|exists:caja_aperturas,id'
+        ]);
+
+        session(['caja_operacion_id' => $request->apertura_id]);
+
+        return redirect()->route('cajas.operaciones')
+            ->with('success', 'Caja cambiada correctamente.');
     }
 }

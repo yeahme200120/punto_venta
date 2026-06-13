@@ -17,6 +17,54 @@
     </div>
     @endif
 
+    {{-- 🔥 SECCIÓN: CAJAS ANTERIORES PENDIENTES --}}
+    @if(isset($cajasAnteriores) && $cajasAnteriores->count() > 0)
+    <div class="p-6 mb-6 border-l-4 border-yellow-500 shadow-md bg-yellow-50 rounded-xl">
+        <div class="flex items-start gap-3">
+            <div class="flex-shrink-0">
+                <svg class="w-6 h-6 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z">
+                    </path>
+                </svg>
+            </div>
+            <div class="flex-1">
+                <h3 class="text-lg font-semibold text-yellow-800">⚠️ Cajas pendientes de cierre</h3>
+                <p class="mt-1 text-sm text-yellow-700">
+                    Existen cajas abiertas de días anteriores que deben cerrarse antes de abrir nuevas cajas.
+                </p>
+                <div class="mt-3 space-y-2">
+                    @foreach($cajasAnteriores as $cajaAntigua)
+                    <div class="flex items-center justify-between p-3 bg-white rounded-lg shadow-sm">
+                        <div>
+                            <p class="font-medium text-gray-800">
+                                {{ $cajaAntigua->caja->nombre }}
+                                <span class="text-xs text-gray-500">({{ $cajaAntigua->caja->codigo }})</span>
+                            </p>
+                            <p class="mt-1 text-xs text-gray-500">
+                                Abierta por: {{ $cajaAntigua->usuario->name }} |
+                                Fecha: {{ $cajaAntigua->fecha->format('d/m/Y') }} |
+                                Hora: {{ $cajaAntigua->created_at->format('H:i') }}
+                            </p>
+                            <p class="mt-1 text-xs font-medium text-indigo-600">
+                                Saldo:
+                                ${{ number_format($cajaAntigua->monto_inicial + $cajaAntigua->total_ingresos - $cajaAntigua->total_egresos, 2) }}
+                            </p>
+                        </div>
+                        @can('cerrar_caja')
+                        <button onclick="cerrarCaja({{ $cajaAntigua->id }}, '{{ $cajaAntigua->caja->nombre }}', {{ $cajaAntigua->monto_inicial + $cajaAntigua->total_ingresos - $cajaAntigua->total_egresos }}, {{ $cajaAntigua->user_id }})"
+                                class="px-3 py-1.5 text-sm text-white bg-red-600 rounded-lg hover:bg-red-700 transition">
+                            Cerrar esta caja
+                        </button>
+                        @endcan
+                    </div>
+                    @endforeach
+                </div>
+            </div>
+        </div>
+    </div>
+    @endif
+
     {{-- Cajas ya abiertas --}}
     @if($aperturasActivas->count() > 0)
     <div class="p-6 mb-6 bg-white shadow-lg rounded-3xl">
@@ -30,8 +78,8 @@
                         Abierta por: {{ $apertura->usuario->name }} | {{ $apertura->created_at->format('d/m/Y H:i') }}
                     </p>
                     <p class="text-sm text-gray-500">
-                        Monto inicial: ${{ number_format($apertura->monto_inicial, 2) }} | 
-                        Ingresos: +${{ number_format($apertura->total_ingresos, 2) }} | 
+                        Monto inicial: ${{ number_format($apertura->monto_inicial, 2) }} |
+                        Ingresos: +${{ number_format($apertura->total_ingresos, 2) }} |
                         Egresos: -${{ number_format($apertura->total_egresos, 2) }}
                     </p>
                     <p class="text-sm font-semibold text-indigo-600">
@@ -42,7 +90,7 @@
                     <a href="{{ route('cajas.operaciones') }}" class="px-4 py-2 text-sm text-white bg-indigo-600 rounded-xl hover:bg-indigo-700">Operaciones</a>
                     @can('cerrar_caja')
                         @if(auth()->user()->hasRole('Super Admin') || auth()->user()->hasRole('Administrador') || $apertura->user_id == auth()->id())
-                        <button onclick="cerrarCaja({{ $apertura->id }}, '{{ $apertura->caja->nombre }}', {{ $apertura->monto_inicial + $apertura->total_ingresos - $apertura->total_egresos }}, {{ $apertura->user_id }})" 
+                        <button onclick="cerrarCaja({{ $apertura->id }}, '{{ $apertura->caja->nombre }}', {{ $apertura->monto_inicial + $apertura->total_ingresos - $apertura->total_egresos }}, {{ $apertura->user_id }})"
                                 class="px-4 py-2 text-sm text-white bg-red-600 rounded-xl hover:bg-red-700">Cerrar</button>
                         @endif
                     @endcan
@@ -123,9 +171,7 @@
 <div id="modalCerrarCaja" class="fixed inset-0 z-50 items-center justify-center hidden bg-black/50">
     <div class="w-full max-w-md p-6 mx-4 bg-white rounded-2xl">
         <h3 class="mb-4 text-xl font-bold">🔒 Cerrar Caja</h3>
-        
-        {{-- Datos de la caja --}}
-        <div class="p-4 mb-4 bg-gray-50 rounded-xl space-y-2">
+        <div class="p-4 mb-4 space-y-2 bg-gray-50 rounded-xl">
             <div class="flex justify-between">
                 <span class="text-gray-600">Caja:</span>
                 <span class="font-semibold" id="infoCajaNombre">-</span>
@@ -135,16 +181,14 @@
                 <span class="font-bold text-indigo-600" id="infoSaldoActual">$0.00</span>
             </div>
         </div>
-
-        <form id="formCerrarCaja" onsubmit="return confirmarCierre(event)">
+        <form id="formCerrarCaja" method="POST" onsubmit="return confirmarCierre(event)">
             @csrf
             <input type="hidden" name="apertura_id" id="cerrar_apertura_id">
             <input type="hidden" name="caja_user_id" id="caja_user_id">
-            
             <div class="space-y-4">
                 <div>
                     <label class="block mb-2 text-sm font-medium">Monto Final *</label>
-                    <input type="number" name="monto_final" id="monto_final" required min="0" step="0.01" 
+                    <input type="number" name="monto_final" id="monto_final" required min="0" step="0.01"
                         class="w-full px-4 py-3 border rounded-xl focus:ring-2 focus:ring-indigo-500">
                     <p class="mt-1 text-xs text-gray-500">Ingresa el monto físico que queda en caja</p>
                 </div>
@@ -152,12 +196,10 @@
                     <label class="block mb-2 text-sm font-medium">Observaciones</label>
                     <textarea name="observaciones" rows="2" class="w-full px-4 py-3 border rounded-xl"></textarea>
                 </div>
-                
-                {{-- ✅ Contraseña maestra (para Admin/Super Admin cerrando caja ajena) --}}
                 <div id="passwordSection" style="display:none;">
-                    <div class="p-3 bg-yellow-50 border border-yellow-200 rounded-xl">
-                        <p class="text-sm text-yellow-800 mb-2">⚠️ Estás cerrando una caja de otro usuario. Ingresa tu contraseña maestra:</p>
-                        <input type="password" name="password_maestra" id="password_maestra" 
+                    <div class="p-3 border border-yellow-200 bg-yellow-50 rounded-xl">
+                        <p class="mb-2 text-sm text-yellow-800">⚠️ Estás cerrando una caja de otro usuario. Ingresa tu contraseña maestra:</p>
+                        <input type="password" name="password_maestra" id="password_maestra"
                             class="w-full px-4 py-3 border rounded-xl focus:ring-2 focus:ring-indigo-500"
                             placeholder="Contraseña maestra">
                     </div>
@@ -187,19 +229,19 @@ async function abrirCaja(event) {
     const cajaId = document.getElementById('caja_id').value;
     const montoInicial = document.getElementById('monto_inicial').value;
     const observaciones = document.getElementById('observaciones').value;
-    
+
     if (!cajaId) { Swal.fire({ icon: 'warning', title: 'Selecciona una caja', confirmButtonColor: '#4f46e5' }); return false; }
-    
+
     const { isConfirmed } = await Swal.fire({
         title: '¿Abrir caja?', icon: 'question', showCancelButton: true,
         confirmButtonColor: '#10b981', cancelButtonColor: '#6b7280',
         confirmButtonText: 'Sí, abrir', cancelButtonText: 'Cancelar'
     });
     if (!isConfirmed) return false;
-    
+
     btn.disabled = true;
     Swal.fire({ title: 'Abriendo...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
-    
+
     try {
         const res = await axios.post('{{ route("cajas.abrir") }}', { caja_id: cajaId, monto_inicial: montoInicial, observaciones });
         if (res.data?.success) {
@@ -212,18 +254,16 @@ async function abrirCaja(event) {
     return false;
 }
 
-// ✅ Cerrar caja con datos
 function cerrarCaja(id, nombre, saldo, userId) {
     document.getElementById('cerrar_apertura_id').value = id;
     document.getElementById('caja_user_id').value = userId;
     document.getElementById('infoCajaNombre').textContent = nombre;
     document.getElementById('infoSaldoActual').textContent = '$' + saldo.toFixed(2);
     document.getElementById('monto_final').value = saldo.toFixed(2);
-    
-    // ✅ Mostrar campo de contraseña si es Admin/Super Admin cerrando caja de otro
+
     const passwordSection = document.getElementById('passwordSection');
     const passwordInput = document.getElementById('password_maestra');
-    
+
     if ((isSuperAdmin || isAdmin) && userId != currentUserId) {
         passwordSection.style.display = 'block';
         passwordInput.required = true;
@@ -232,7 +272,7 @@ function cerrarCaja(id, nombre, saldo, userId) {
         passwordInput.required = false;
         passwordInput.value = '';
     }
-    
+
     document.getElementById('modalCerrarCaja').classList.remove('hidden');
     document.getElementById('modalCerrarCaja').classList.add('flex');
 }
@@ -250,35 +290,34 @@ async function confirmarCierre(event) {
     const formData = new FormData(form);
     const data = Object.fromEntries(formData.entries());
     const btn = document.getElementById('btnCerrarCaja');
-    
-    // Validar
+
     if (!data.monto_final || parseFloat(data.monto_final) < 0) {
         Swal.fire({ icon: 'warning', title: 'Monto requerido', text: 'Ingresa el monto final', confirmButtonColor: '#4f46e5' });
         return false;
     }
-    
+
     const passwordSection = document.getElementById('passwordSection');
     if (passwordSection.style.display !== 'none' && !data.password_maestra) {
         Swal.fire({ icon: 'warning', title: 'Contraseña requerida', text: 'Ingresa tu contraseña maestra', confirmButtonColor: '#4f46e5' });
         return false;
     }
-    
+
     const { isConfirmed } = await Swal.fire({
-        title: '¿Cerrar caja?', 
+        title: '¿Cerrar caja?',
         html: `<div class="text-left">
             <p>Caja: <strong>${document.getElementById('infoCajaNombre').textContent}</strong></p>
             <p>Monto final: <strong>$${parseFloat(data.monto_final).toFixed(2)}</strong></p>
-            <p class="text-red-600 mt-2">Esta acción no se puede deshacer</p>
+            <p class="mt-2 text-red-600">Esta acción no se puede deshacer</p>
         </div>`,
         icon: 'warning',
         showCancelButton: true, confirmButtonColor: '#d33', cancelButtonColor: '#6b7280',
         confirmButtonText: 'Sí, cerrar', cancelButtonText: 'Cancelar'
     });
     if (!isConfirmed) return false;
-    
+
     btn.disabled = true;
     Swal.fire({ title: 'Cerrando...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
-    
+
     try {
         const res = await axios.post('{{ route("cajas.cerrar") }}', data);
         if (res.data?.success) {
@@ -289,8 +328,8 @@ async function confirmarCierre(event) {
         }
     } catch(e) {
         Swal.fire({ icon: 'error', title: 'Error', text: e.response?.data?.message || 'Error', confirmButtonColor: '#ef4444' });
-    } finally { 
-        btn.disabled = false; 
+    } finally {
+        btn.disabled = false;
     }
     return false;
 }

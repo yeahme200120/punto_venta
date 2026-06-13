@@ -8,4 +8,13 @@ export default defineConfig({
             refresh: true,
         }),
     ],
+    server: {
+        watch: {
+            usePolling: true,
+        },
+    },
+    // Configuración de zona horaria para desarrollo
+    define: {
+        'process.env.TZ': '"America/Mexico_City"'
+    }
 });

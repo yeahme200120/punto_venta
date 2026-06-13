@@ -19,7 +19,7 @@
         <span class="text-sm text-gray-400">Mostrando {{ $usuarios->count() }} de {{ $usuarios->total() }} usuarios</span>
     </div>
 
-    @can('ver_usuarios')
+    @can('exportar_usuarios')
     <a href="{{ route('usuarios.export') }}"
         class="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white transition bg-green-600 shadow rounded-xl hover:bg-green-700">
         📥 Exportar Excel
@@ -85,12 +85,12 @@
                             @can('editar_usuarios')
                             <a href="{{ route('usuarios.edit', $usuario) }}" class="p-2 text-gray-400 hover:text-amber-600" title="Editar">✏️</a>
                             @endcan
-                            @can('editar_usuarios')
+                            @can('modificar_permisos_usuarios')
                             <a href="{{ route('usuarios.permisos.edit', $usuario) }}" class="p-2 text-gray-400 hover:text-purple-600" title="Permisos">🔐</a>
                             @endcan
                             @can('eliminar_usuarios')
                                 @if($usuario->id !== auth()->id())
-                                <button type="button" class="btn-eliminar-usuario p-2 text-gray-400 hover:text-red-600"
+                                <button type="button" class="p-2 text-gray-400 btn-eliminar-usuario hover:text-red-600"
                                     data-id="{{ $usuario->id }}" data-nombre="{{ $usuario->name }}" title="Eliminar">🗑️</button>
                                 @endif
                             @endcan
@@ -109,7 +109,11 @@
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    if (typeof axios === 'undefined') return;
+    if (typeof axios === 'undefined') {
+        console.warn('Axios no disponible');
+        return;
+    }
+    
     axios.defaults.headers.common['X-CSRF-TOKEN'] = '{{ csrf_token() }}';
     axios.defaults.headers.common['Accept'] = 'application/json';
     
@@ -117,7 +121,10 @@ document.addEventListener('DOMContentLoaded', function() {
     
     document.querySelectorAll('.btn-eliminar-usuario').forEach(btn => {
         btn.addEventListener('click', async () => {
-            if (!canDelete) { Swal.fire({ icon: 'error', title: 'Acceso denegado', confirmButtonColor: '#ef4444' }); return; }
+            if (!canDelete) { 
+                Swal.fire({ icon: 'error', title: 'Acceso denegado', confirmButtonColor: '#ef4444' }); 
+                return; 
+            }
             
             const { id, nombre } = btn.dataset;
             const { isConfirmed } = await Swal.fire({
@@ -125,8 +132,10 @@ document.addEventListener('DOMContentLoaded', function() {
                 html: `<strong>${nombre}</strong><br>Esta acción no se puede deshacer.`,
                 icon: 'warning',
                 showCancelButton: true,
-                confirmButtonColor: '#d33', cancelButtonColor: '#6b7280',
-                confirmButtonText: 'Sí, eliminar', cancelButtonText: 'Cancelar'
+                confirmButtonColor: '#d33', 
+                cancelButtonColor: '#6b7280',
+                confirmButtonText: 'Sí, eliminar', 
+                cancelButtonText: 'Cancelar'
             });
             
             if (!isConfirmed) return;
@@ -134,9 +143,17 @@ document.addEventListener('DOMContentLoaded', function() {
             
             try {
                 const res = await axios.delete(`/usuarios/${id}`);
-                if (res.data?.success !== false) { await Swal.fire({ icon: 'success', title: 'Eliminado', timer: 2000 }); location.reload(); }
+                if (res.data?.success !== false) { 
+                    await Swal.fire({ icon: 'success', title: 'Eliminado', timer: 2000 }); 
+                    location.reload(); 
+                }
             } catch(e) {
-                Swal.fire({ icon: 'error', title: 'Error', text: e.response?.data?.message || 'Error', confirmButtonColor: '#ef4444' });
+                Swal.fire({ 
+                    icon: 'error', 
+                    title: 'Error', 
+                    text: e.response?.data?.message || 'Error', 
+                    confirmButtonColor: '#ef4444' 
+                });
             }
         });
     });

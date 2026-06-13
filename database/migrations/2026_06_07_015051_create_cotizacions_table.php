@@ -13,10 +13,10 @@ return new class extends Migration
     {
         Schema::create('cotizacions', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('empresa_id')->constrained();
-            $table->foreignId('sucursal_id')->constrained();
-            $table->foreignId('user_id')->constrained();
-            $table->foreignId('cliente_id')->nullable()->constrained();
+            $table->unsignedBigInteger('empresa_id');
+            $table->unsignedBigInteger('sucursal_id');
+            $table->unsignedBigInteger('user_id');
+            $table->unsignedBigInteger('cliente_id')->nullable();
             $table->string('folio', 20)->unique();
             $table->enum('estado', ['activa', 'convertida', 'vencida', 'cancelada'])->default('activa');
             $table->decimal('subtotal', 12, 2);

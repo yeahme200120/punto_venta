@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Storage;
+use Carbon\Carbon;
 
 class Empresa extends Model
 {
@@ -42,11 +43,96 @@ class Empresa extends Model
     {
         return $this->hasMany(User::class, 'empresa_id');
     }
-    // Verificar si la licencia está vigente
+
+    public function historialLicencias()
+    {
+        return $this->hasMany(EmpresaLicenciaHistorial::class)->orderBy('created_at', 'desc');
+    }
+
+    /**
+     * Obtener la licencia actualmente activa (último período del historial)
+     */
+    public function licenciaActiva()
+    {
+        // Primero intentar obtener del historial
+        $historialActivo = $this->historialLicencias()
+            ->where('fecha_fin_periodo', '>=', Carbon::now())
+            ->first();
+
+        if ($historialActivo) {
+            return $historialActivo;
+        }
+
+        // Si no hay historial, usar los datos de la empresa (migración inicial)
+        if ($this->licencia_id && $this->fecha_fin) {
+            // Crear un objeto virtual para compatibilidad
+            $virtual = new \stdClass();
+            $virtual->licencia = $this->licencia;
+            $virtual->fecha_inicio_periodo = $this->fecha_inicio;
+            $virtual->fecha_fin_periodo = $this->fecha_fin;
+            $virtual->licencia_id = $this->licencia_id;
+            return $virtual;
+        }
+
+        return null;
+    }
+
+    /**
+     * Verificar si la licencia está vigente (hasta las 23:59:59 del día de fin)
+     */
     public function licenciaVigente(): bool
     {
-        return $this->activo && $this->fecha_fin >= now();
+        $licenciaActiva = $this->licenciaActiva();
+
+        if (!$licenciaActiva) {
+            return false;
+        }
+
+        $fechaFin = $licenciaActiva->fecha_fin_periodo ?? $this->fecha_fin;
+
+        if (!$fechaFin) {
+            return false;
+        }
+
+        if (!$fechaFin instanceof Carbon) {
+            $fechaFin = Carbon::parse($fechaFin);
+        }
+        
+        return $this->activo && $fechaFin->endOfDay()->isFuture();
     }
+
+    /**
+     * Obtener días restantes de licencia
+     */
+    public function diasRestantesLicencia(): int
+    {
+        $licenciaActiva = $this->licenciaActiva();
+
+        if (!$licenciaActiva) {
+            return 0;
+        }
+
+        $fechaFin = $licenciaActiva->fecha_fin_periodo ?? $this->fecha_fin;
+
+        if (!$fechaFin) {
+            return 0;
+        }
+
+        if (!$fechaFin instanceof \Carbon\Carbon) {
+            $fechaFin = \Carbon\Carbon::parse($fechaFin);
+        }
+
+        $hoy = \Carbon\Carbon::now();
+        $fechaFinFinDelDia = $fechaFin->copy()->endOfDay();
+
+        if ($fechaFinFinDelDia < $hoy) {
+            return 0;
+        }
+
+        // Calcular días completos restantes (redondeando hacia arriba)
+        return max(1, ceil($hoy->diffInDays($fechaFinFinDelDia, false)));
+    }
+
     // Accessor para obtener la URL completa del logo
     public function getLogoUrlAttribute()
     {
@@ -65,6 +151,7 @@ class Empresa extends Model
         $this->logo = null;
         $this->save();
     }
+
     protected static function booted()
     {
         static::deleting(function ($empresa) {

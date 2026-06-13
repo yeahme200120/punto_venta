@@ -10,6 +10,7 @@ use App\Models\ContrasenaMaestra;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 
 class CajaService
 {
@@ -177,11 +178,15 @@ class CajaService
                 'requiere_autorizacion' => $requiereAutorizacion
             ]);
 
-            // Actualizar totales de la apertura
-            if ($data['tipo'] === 'ingreso') {
-                $apertura->increment('total_ingresos', $data['monto']);
-            } else {
-                $apertura->increment('total_egresos', $data['monto']);
+            // 🔥 SOLO actualizar totales SI NO requiere autorización
+            if (!$requiereAutorizacion) {
+                if ($data['tipo'] === 'ingreso') {
+                    $apertura->increment('total_ingresos', $data['monto']);
+                    $apertura->caja->increment('saldo_actual', $data['monto']);
+                } else {
+                    $apertura->increment('total_egresos', $data['monto']);
+                    $apertura->caja->decrement('saldo_actual', $data['monto']);
+                }
             }
 
             DB::commit();
@@ -193,44 +198,51 @@ class CajaService
         }
     }
 
-    /**
-     * Autorizar movimiento
-     */
-    public static function autorizarMovimiento($movimientoId, $autorizadorId, $passwordMaestra)
+    // app/Services/CajaService.php
+
+    public static function autorizarMovimiento($movimientoId, $passwordMaestra)
     {
         DB::beginTransaction();
         try {
             $movimiento = CajaMovimiento::findOrFail($movimientoId);
-            $autorizador = User::findOrFail($autorizadorId);
 
-            // Determinar el tipo de contraseña según el rol
-            if ($autorizador->hasRole('Super Admin')) {
-                $tipo = 'super_admin';
-            } elseif ($autorizador->hasRole('Administrador')) {
-                $tipo = 'admin';
-            } else {
-                throw new \Exception('Solo Super Admin o Administradores pueden autorizar movimientos.');
+            if (!$movimiento->requiere_autorizacion) {
+                throw new \Exception('Este movimiento no requiere autorización.');
             }
 
-            // Verificar contraseña maestra
-            $passwordMaestraDB = ContrasenaMaestra::where('user_id', $autorizadorId)
-                ->where('tipo', $tipo)
-                ->where('activo', true)
-                ->first();
-
-            if (!$passwordMaestraDB || !$passwordMaestraDB->verificar($passwordMaestra)) {
-                throw new \Exception('Contraseña maestra incorrecta.');
+            if ($movimiento->autorizado_por) {
+                throw new \Exception('Este movimiento ya fue autorizado.');
             }
 
-            // Actualizar movimiento
+            // 🔥 Validar la contraseña de forma GLOBAL (identificar quién la ingresó)
+            $autorizador = ContrasenaMaestra::validarPasswordGlobal($passwordMaestra, $movimiento->cajaApertura->empresa_id);
+
+            if (!$autorizador) {
+                throw new \Exception('Contraseña maestra incorrecta o no tienes autorización para esta operación.');
+            }
+
+            // 🔥 Verificar que el autorizador tenga permisos (Super Admin o Administrador)
+            if (!$autorizador->hasRole('Super Admin') && !$autorizador->hasRole('Administrador')) {
+                throw new \Exception('No tienes permisos para autorizar movimientos. Solo Super Admin o Administradores pueden autorizar.');
+            }
+
+            // 🔥 Actualizar movimiento
             $movimiento->update([
                 'requiere_autorizacion' => false,
-                'autorizado_por' => $autorizadorId,
+                'autorizado_por' => $autorizador->id,
                 'autorizado_en' => now()
             ]);
 
-            // Registrar último uso
-            $passwordMaestraDB->update(['ultimo_uso' => now()]);
+            // 🔥 ACTUALIZAR TOTALES DE LA CAJA al autorizar
+            $apertura = $movimiento->cajaApertura;
+
+            if ($movimiento->tipo === 'ingreso') {
+                $apertura->increment('total_ingresos', $movimiento->monto);
+                $apertura->caja->increment('saldo_actual', $movimiento->monto);
+            } else {
+                $apertura->increment('total_egresos', $movimiento->monto);
+                $apertura->caja->decrement('saldo_actual', $movimiento->monto);
+            }
 
             DB::commit();
             return $movimiento;
@@ -280,42 +292,89 @@ class CajaService
     }
 
 
-    public static function aprobarTransferencia($transferenciaId, $autorizadorId, $passwordMaestra)
+    // app/Services/CajaService.php
+
+    public static function aprobarTransferencia($transferenciaId, $passwordMaestra)
     {
         DB::beginTransaction();
         try {
             $transferencia = CajaTransferencia::findOrFail($transferenciaId);
-            $autorizador = User::findOrFail($autorizadorId);
 
-            // Determinar el tipo de contraseña según el rol
-            if ($autorizador->hasRole('Super Admin')) {
-                $tipo = 'super_admin';
-            } elseif ($autorizador->hasRole('Administrador')) {
-                $tipo = 'admin';
-            } else {
-                throw new \Exception('Solo Super Admin o Administradores pueden autorizar transferencias.');
+            if ($transferencia->estado !== 'pendiente') {
+                throw new \Exception('Esta transferencia ya fue procesada o cancelada.');
             }
 
-            // Verificar contraseña maestra
-            $passwordMaestraDB = ContrasenaMaestra::where('user_id', $autorizadorId)
-                ->where('tipo', $tipo)
-                ->where('activo', true)
-                ->first();
+            // 🔥 Validar la contraseña de forma GLOBAL (identificar quién la ingresó)
+            // Obtener la empresa de la caja origen
+            $cajaOrigen = Caja::find($transferencia->caja_origen_id);
+            $empresaId = $cajaOrigen ? $cajaOrigen->empresa_id : null;
 
-            if (!$passwordMaestraDB || !$passwordMaestraDB->verificar($passwordMaestra)) {
-                throw new \Exception('Contraseña maestra incorrecta.');
+            $autorizador = ContrasenaMaestra::validarPasswordGlobal($passwordMaestra, $empresaId);
+
+            if (!$autorizador) {
+                throw new \Exception('Contraseña maestra incorrecta o no tienes autorización para esta operación.');
             }
 
-            // Registrar movimientos de transferencia
-            // ... (código existente)
+            // 🔥 Verificar que el autorizador tenga permisos (Super Admin o Administrador)
+            if (!$autorizador->hasRole('Super Admin') && !$autorizador->hasRole('Administrador')) {
+                throw new \Exception('No tienes permisos para autorizar transferencias. Solo Super Admin o Administradores pueden autorizar.');
+            }
 
-            $transferencia->update([
-                'estado' => 'aprobada',
-                'autorizado_por' => $autorizadorId,
-                'autorizado_en' => now()
+            // Obtener las aperturas
+            $aperturaOrigen = CajaApertura::find($transferencia->caja_apertura_origen_id);
+            $aperturaDestino = CajaApertura::find($transferencia->caja_apertura_destino_id);
+
+            if (!$aperturaOrigen || !$aperturaDestino) {
+                throw new \Exception('No se encontraron las aperturas de caja.');
+            }
+
+            // Verificar saldo en caja origen
+            $saldoOrigen = $aperturaOrigen->saldoActual();
+            if ($saldoOrigen < $transferencia->monto) {
+                throw new \Exception("Saldo insuficiente en caja origen. Saldo actual: $" . number_format($saldoOrigen, 2));
+            }
+
+            // Registrar egreso en caja origen
+            CajaMovimiento::create([
+                'caja_apertura_id' => $aperturaOrigen->id,
+                'user_id' => $autorizador->id,
+                'sucursal_id' => $aperturaOrigen->sucursal_id,
+                'tipo' => 'egreso',
+                'categoria' => 'transferencia',
+                'forma_pago' => 'transferencia',
+                'monto' => $transferencia->monto,
+                'concepto' => "Transferencia a caja {$transferencia->cajaDestino->codigo} - {$transferencia->motivo}",
+                'referencia' => "TRANSF-{$transferencia->id}",
+                'requiere_autorizacion' => false
             ]);
 
-            $passwordMaestraDB->update(['ultimo_uso' => now()]);
+            // Registrar ingreso en caja destino
+            CajaMovimiento::create([
+                'caja_apertura_id' => $aperturaDestino->id,
+                'user_id' => $autorizador->id,
+                'sucursal_id' => $aperturaDestino->sucursal_id,
+                'tipo' => 'ingreso',
+                'categoria' => 'transferencia',
+                'forma_pago' => 'transferencia',
+                'monto' => $transferencia->monto,
+                'concepto' => "Transferencia desde caja {$transferencia->cajaOrigen->codigo} - {$transferencia->motivo}",
+                'referencia' => "TRANSF-{$transferencia->id}",
+                'requiere_autorizacion' => false
+            ]);
+
+            // Actualizar saldos
+            $aperturaOrigen->increment('total_egresos', $transferencia->monto);
+            $aperturaOrigen->caja->decrement('saldo_actual', $transferencia->monto);
+
+            $aperturaDestino->increment('total_ingresos', $transferencia->monto);
+            $aperturaDestino->caja->increment('saldo_actual', $transferencia->monto);
+
+            // Actualizar transferencia
+            $transferencia->update([
+                'estado' => 'aprobada',
+                'autorizado_por' => $autorizador->id,
+                'autorizado_en' => now()
+            ]);
 
             DB::commit();
             return $transferencia;
@@ -329,16 +388,62 @@ class CajaService
 
     public static function resumenDia($aperturaId)
     {
-        $apertura = CajaApertura::with('movimientos')->findOrFail($aperturaId);
+        Log::info('=== CajaService::resumenDia ===', ['apertura_id' => $aperturaId]);
 
-        // Asegurar que todos los valores sean float
-        $montoInicial = floatval($apertura->monto_inicial ?? 0);
-        $totalIngresos = floatval($apertura->total_ingresos ?? 0);
-        $totalEgresos = floatval($apertura->total_egresos ?? 0);
+        $apertura = CajaApertura::findOrFail($aperturaId);
 
-        // Calcular por forma de pago
+        Log::info('Apertura encontrada:', [
+            'id' => $apertura->id,
+            'monto_inicial' => $apertura->monto_inicial,
+            'total_ingresos' => $apertura->total_ingresos,
+            'total_egresos' => $apertura->total_egresos
+        ]);
+
+        // 🔥 Usar los totales ya almacenados en la apertura (que solo incluyen autorizados)
+        $totalRetiros = CajaMovimiento::where('caja_apertura_id', $aperturaId)
+            ->where('tipo', 'egreso')
+            ->where('categoria', 'retiro_parcial')
+            ->where('requiere_autorizacion', false)  // Solo autorizados
+            ->sum('monto');
+
+        // 🔥 También calcular pendientes de autorización
+        $pendientesIngresos = CajaMovimiento::where('caja_apertura_id', $aperturaId)
+            ->where('tipo', 'ingreso')
+            ->where('requiere_autorizacion', true)
+            ->whereNull('autorizado_por')
+            ->sum('monto');
+        $pendientesEgresos = CajaMovimiento::where('caja_apertura_id', $aperturaId)
+            ->where('tipo', 'egreso')
+            ->where('requiere_autorizacion', true)
+            ->whereNull('autorizado_por')
+            ->sum('monto');
+
+        $resultado = [
+            'fecha' => $apertura->fecha->format('d/m/Y'),
+            'apertura' => (float) $apertura->monto_inicial,
+            'total_ingresos' => (float) $apertura->total_ingresos,
+            'total_egresos' => (float) $apertura->total_egresos,
+            'total_retiros' => (float) $totalRetiros,
+            'pendientes_ingresos' => (float) $pendientesIngresos,
+            'pendientes_egresos' => (float) $pendientesEgresos,
+            'saldo_esperado' => (float) ($apertura->monto_inicial + $apertura->total_ingresos - $apertura->total_egresos),
+            'por_forma_pago' => self::calcularPorFormaPago($aperturaId)
+        ];
+
+        Log::info('Resultado resumen:', $resultado);
+
+        return $resultado;
+    }
+    public static function calcularPorFormaPago($aperturaId)
+    {
         $porFormaPago = [];
-        foreach ($apertura->movimientos->where('tipo', 'ingreso') as $movimiento) {
+
+        $movimientos = CajaMovimiento::where('caja_apertura_id', $aperturaId)
+            ->where('tipo', 'ingreso')
+            ->where('requiere_autorizacion', false)  // Solo autorizados
+            ->get();
+
+        foreach ($movimientos as $movimiento) {
             $forma = $movimiento->forma_pago;
             if (!isset($porFormaPago[$forma])) {
                 $porFormaPago[$forma] = 0;
@@ -346,25 +451,6 @@ class CajaService
             $porFormaPago[$forma] += floatval($movimiento->monto);
         }
 
-        // Calcular promedios
-        $totalTransacciones = $apertura->movimientos->count();
-        $totalClientes = $apertura->movimientos->whereNotNull('cliente_id')->groupBy('cliente_id')->count();
-
-        $resumen = [
-            'fecha' => $apertura->fecha ? $apertura->fecha->format('d/m/Y') : now()->format('d/m/Y'),
-            'apertura' => $montoInicial,
-            'total_ingresos' => $totalIngresos,
-            'total_egresos' => $totalEgresos,
-            'saldo_esperado' => $montoInicial + $totalIngresos - $totalEgresos,
-            'por_forma_pago' => $porFormaPago,
-            'promedio_venta' => $totalTransacciones > 0 ? $totalIngresos / $totalTransacciones : 0,
-            'promedio_ingreso' => $apertura->movimientos->where('tipo', 'ingreso')->count() > 0
-                ? $totalIngresos / $apertura->movimientos->where('tipo', 'ingreso')->count()
-                : 0,
-            'total_transacciones' => $totalTransacciones,
-            'total_clientes' => $totalClientes,
-        ];
-
-        return $resumen;
+        return $porFormaPago;
     }
 }

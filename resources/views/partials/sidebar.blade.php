@@ -1,63 +1,3 @@
-@php
-    $user = auth()->user();
-    $empresaActivaId = session('empresa_activa_id', auth()->user()->empresa_id);
-    $empresaActiva = \App\Models\Empresa::with('licencia')->find($empresaActivaId);
-    $sucursalActivaId = session('sucursal_activa_id', auth()->user()->sucursal_id);
-    $sucursalActiva = $sucursalActivaId ? \App\Models\Sucursal::find($sucursalActivaId) : null;
-
-    function puedeVerMenu($menu, $user) {
-        if ($user->hasRole('Super Admin')) return true;
-        if (!empty($menu->permiso)) {
-            if (!$user->can($menu->permiso)) return false;
-        }
-        if ($menu->hijos->count() > 0) {
-            $tieneHijoVisible = false;
-            foreach ($menu->hijos as $hijo) {
-                if (empty($hijo->permiso) || $user->can($hijo->permiso)) {
-                    $tieneHijoVisible = true;
-                    break;
-                }
-            }
-            return $tieneHijoVisible;
-        }
-        return true;
-    }
-
-    $modulos = \App\Models\Modulo::with([
-        'menus' => function ($query) {
-            $query->where('activo', true)
-                ->whereNull('menu_padre_id')
-                ->with(['hijos' => function ($q) {
-                    $q->where('activo', true)->orderBy('orden');
-                }])
-                ->orderBy('orden');
-        }
-    ])->where('activo', true)->orderBy('orden')->get();
-
-    $currentPath = request()->path();
-    
-    // Construir array de IDs de menús activos
-    $activeMenuIds = [];
-    $activeParentIds = []; // Menús padre que deben estar abiertos
-    
-    foreach ($modulos as $modulo) {
-        foreach ($modulo->menus as $menu) {
-            if ($menu->ruta && request()->is(trim($menu->ruta, '/') . '*')) {
-                $activeMenuIds[] = $menu->id;
-            }
-            foreach ($menu->hijos as $hijo) {
-                if (request()->is(trim($hijo->ruta, '/') . '*')) {
-                    $activeMenuIds[] = $hijo->id;
-                    $activeMenuIds[] = $menu->id;
-                    $activeParentIds[] = $menu->id;
-                }
-            }
-        }
-    }
-    $activeMenuIds = array_unique($activeMenuIds);
-    $activeParentIds = array_unique($activeParentIds);
-@endphp
-
 <aside id="sidebar" 
        class="sticky top-0 z-30 flex flex-col flex-shrink-0 w-64 h-screen text-white transition-all duration-300 ease-in-out shadow-xl bg-gradient-to-b from-indigo-700 via-blue-700 to-cyan-600">
 
@@ -101,28 +41,24 @@
     </div>
 
     {{-- Navegación --}}
-    <nav class="flex-1 p-3 space-y-2 overflow-x-hidden overflow-y-auto scrollbar-thin">
+    <nav class="flex-1 p-3 space-y-2 overflow-y-auto" style="scrollbar-width: thin">
         @foreach($modulos as $moduloIndex => $modulo)
             @php
                 $menusVisibles = $modulo->menus->filter(function($menu) use ($user) {
-                    return puedeVerMenu($menu, $user);
+                    return \App\ViewComposers\SidebarComposer::puedeVerMenu($menu, $user);
                 });
             @endphp
             
             @if($menusVisibles->count() > 0)
                 <div class="mb-3">
-                    <div id="moduloHeader{{ $moduloIndex }}" class="mb-2 px-3 py-1.5 text-[11px] tracking-wider text-blue-200 uppercase flex items-center gap-2 font-semibold">
+                    <div class="mb-2 px-3 py-1 text-[10px] tracking-wider text-blue-200 uppercase flex items-center gap-2 font-semibold">
                         @if($modulo->icono)
-                            <span class="flex-shrink-0 text-base">{!! $modulo->icono !!}</span>
-                        @else
-                            <svg class="flex-shrink-0 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
-                            </svg>
+                            <span class="flex-shrink-0 text-sm">{!! $modulo->icono !!}</span>
                         @endif
                         <span class="sidebar-text whitespace-nowrap">{{ $modulo->nombre }}</span>
                     </div>
 
-                    <div class="space-y-1">
+                    <div class="space-y-0.5">
                         @foreach($menusVisibles as $menuIndex => $menu)
                             @php
                                 $hasChildren = $menu->hijos->count() > 0;
@@ -130,42 +66,40 @@
                                     return !$hijo->permiso || $user->can($hijo->permiso);
                                 }) : collect();
                                 $menuKey = "submenu_{$moduloIndex}_{$menuIndex}";
-                                $isMenuActive = in_array($menu->id, $activeMenuIds);
                                 $isParentActive = in_array($menu->id, $activeParentIds);
+                                $isMenuActive = in_array($menu->id, $activeMenuIds);
                             @endphp
 
                             @if($hasChildren && $hijosVisibles->count() > 0)
-                                {{-- Menú con submenús --}}
-                                <div class="relative">
+                                <div>
                                     <div data-submenu-toggle="{{ $menuKey }}"
-                                         class="submenu-toggle flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm transition-all duration-200 cursor-pointer hover:bg-white/10 {{ $isMenuActive ? 'bg-white text-slate-900 shadow-lg font-semibold' : '' }}">
-                                        <div class="flex items-center flex-1 gap-2">
-                                            <span class="flex-shrink-0 w-1.5 h-1.5 rounded-full {{ $isMenuActive ? 'bg-slate-600' : 'bg-blue-200' }}"></span>
+                                         class="flex items-center justify-between px-3 py-2 rounded-lg text-sm cursor-pointer transition-all duration-200 hover:bg-white/10 {{ $isParentActive ? 'bg-white/10' : '' }}">
+                                        <div class="flex items-center gap-2">
+                                            <span class="w-1.5 h-1.5 rounded-full {{ $isMenuActive ? 'bg-white' : 'bg-blue-300' }}"></span>
                                             <span class="sidebar-text whitespace-nowrap">{{ $menu->nombre }}</span>
                                         </div>
-                                        <svg class="submenu-arrow flex-shrink-0 w-4 h-4 transition-transform duration-200 {{ $isParentActive ? 'rotate-90' : '' }}" 
+                                        <svg class="submenu-arrow w-3 h-3 transition-transform duration-200 text-blue-300 {{ $isParentActive ? 'rotate-90' : '' }}" 
                                              fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
                                         </svg>
                                     </div>
 
                                     <div data-submenu-content="{{ $menuKey }}"
-                                         class="submenu-content pl-2 mt-1 ml-4 space-y-1 border-l-2 border-white/20 {{ $isParentActive ? '' : 'hidden' }}">
+                                         class="submenu-content pl-4 ml-2 mt-1 space-y-0.5 border-l border-white/20 {{ $isParentActive ? '' : 'hidden' }}">
                                         @foreach($hijosVisibles as $hijo)
                                             @php $isHijoActive = in_array($hijo->id, $activeMenuIds); @endphp
                                             <a href="{{ url($hijo->ruta) }}" 
-                                               class="flex items-center gap-2 px-3 py-2 rounded-lg transition-all duration-200 text-[13px] hover:bg-white/10 hover:pl-4 {{ $isHijoActive ? 'bg-white/20 font-medium' : '' }}">
-                                                <span class="w-1 h-1 rounded-full {{ $isHijoActive ? 'bg-white' : 'bg-blue-300' }}"></span>
+                                               class="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs transition-all duration-200 hover:bg-white/10 hover:pl-4 {{ $isHijoActive ? 'bg-white/20 font-medium' : '' }}">
+                                                <span class="w-1 h-1 rounded-full {{ $isHijoActive ? 'bg-white' : 'bg-blue-400' }}"></span>
                                                 <span>{{ $hijo->nombre }}</span>
                                             </a>
                                         @endforeach
                                     </div>
                                 </div>
                             @elseif(!$hasChildren)
-                                {{-- Menú sin submenús --}}
                                 <a href="{{ url($menu->ruta) }}"
-                                   class="flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm transition-all duration-200 hover:bg-white/10 {{ $isMenuActive ? 'bg-white/20 font-semibold shadow-sm' : '' }}">
-                                    <span class="flex-shrink-0 w-1.5 h-1.5 rounded-full {{ $isMenuActive ? 'bg-white' : 'bg-blue-200' }}"></span>
+                                   class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all duration-200 hover:bg-white/10 {{ $isMenuActive ? 'bg-white/20 font-semibold' : '' }}">
+                                    <span class="w-1.5 h-1.5 rounded-full {{ $isMenuActive ? 'bg-white' : 'bg-blue-300' }}"></span>
                                     <span class="sidebar-text whitespace-nowrap">{{ $menu->nombre }}</span>
                                 </a>
                             @endif
@@ -200,203 +134,113 @@
     </div>
 </aside>
 
-<script>
-    // ============================================================
-    // 🪵 LOGS DE DIAGNÓSTICO - DOBLE CLIC SIDEBAR (CORREGIDO)
-    // ============================================================
-    
-    // ✅ EVITAR DOBLE EJECUCIÓN
-    if (window.__sidebarInitialized) {
-        console.warn('⚠️ [SIDEBAR] Ya estaba inicializado. SALTANDO segunda ejecución.');
-        // No hacer nada más
-    } else {
-        window.__sidebarInitialized = true;
-        
-        // ✅ ESPERAR A QUE EL DOM ESTÉ COMPLETO
-        document.addEventListener('DOMContentLoaded', function() {
-            
-            console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-            console.log('🟢 [SIDEBAR] DOMContentLoaded - INICIALIZANDO');
-            console.log('🟢 [SIDEBAR] Timestamp:', new Date().toISOString());
-            console.log('🟢 [SIDEBAR] URL actual:', window.location.href);
-            console.log('🟢 [SIDEBAR] Alpine.js:', typeof Alpine !== 'undefined' ? 'PRESENTE ✅' : 'NO');
-            console.log('🟢 [SIDEBAR] DOM Ready:', document.readyState);
-            console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-            
-            // Elementos del DOM
-            const sidebar = document.getElementById('sidebar');
-            const collapseBtn = document.getElementById('collapseSidebarBtn');
-            const collapseIcon = document.getElementById('collapseIcon');
-            const sidebarTexts = document.querySelectorAll('.sidebar-text');
-            const sidebarHeader = document.getElementById('sidebarHeader');
-            const sidebarHeaderText = document.getElementById('sidebarHeaderText');
-            const sidebarFooterExpanded = document.getElementById('sidebarFooterExpanded');
-            const sidebarFooterCollapsed = document.getElementById('sidebarFooterCollapsed');
-            const moduloHeaders = document.querySelectorAll('[id^="moduloHeader"]');
-            const submenuToggles = document.querySelectorAll('[data-submenu-toggle]');
-            
-            console.log('📋 [SIDEBAR] Elementos encontrados:');
-            console.log('   sidebar:', sidebar ? '✅' : '❌');
-            console.log('   collapseBtn:', collapseBtn ? '✅' : '❌');
-            console.log('   submenuToggles:', submenuToggles.length);
-            submenuToggles.forEach((t, i) => {
-                console.log(`      [${i}] ${t.getAttribute('data-submenu-toggle')} | Visible: ${!t.closest('.hidden')}`);
-            });
-            
-            let isCollapsed = localStorage.getItem('sidebarCollapsed') === 'true';
-            console.log('🔑 [SIDEBAR] localStorage sidebarCollapsed:', isCollapsed);
-            
-            // ============================================================
-            // COLAPSAR SIDEBAR
-            // ============================================================
-            
-            function applyCollapseState() {
-                console.log('🔄 [SIDEBAR] applyCollapseState() - isCollapsed:', isCollapsed);
-                
-                if (isCollapsed) {
-                    sidebar?.classList.remove('w-64');
-                    sidebar?.classList.add('w-16');
-                    collapseIcon?.classList.add('rotate-180');
-                    sidebarTexts.forEach(el => el.style.display = 'none');
-                    sidebarHeader?.classList.add('justify-center');
-                    if (sidebarHeaderText) sidebarHeaderText.style.display = 'none';
-                    if (sidebarFooterExpanded) sidebarFooterExpanded.style.display = 'none';
-                    if (sidebarFooterCollapsed) sidebarFooterCollapsed.style.display = 'flex';
-                    moduloHeaders.forEach(el => {
-                        el.classList.add('justify-center');
-                        const text = el.querySelector('.sidebar-text');
-                        if (text) text.style.display = 'none';
-                    });
-                } else {
-                    sidebar?.classList.remove('w-16');
-                    sidebar?.classList.add('w-64');
-                    collapseIcon?.classList.remove('rotate-180');
-                    sidebarTexts.forEach(el => el.style.display = '');
-                    sidebarHeader?.classList.remove('justify-center');
-                    if (sidebarHeaderText) sidebarHeaderText.style.display = '';
-                    if (sidebarFooterExpanded) sidebarFooterExpanded.style.display = '';
-                    if (sidebarFooterCollapsed) sidebarFooterCollapsed.style.display = 'none';
-                    moduloHeaders.forEach(el => {
-                        el.classList.remove('justify-center');
-                        const text = el.querySelector('.sidebar-text');
-                        if (text) text.style.display = '';
-                    });
-                }
-            }
-            
-            if (collapseBtn) {
-                // ✅ Reemplazar para eliminar listeners antiguos
-                const newCollapseBtn = collapseBtn.cloneNode(true);
-                collapseBtn.parentNode.replaceChild(newCollapseBtn, collapseBtn);
-                
-                newCollapseBtn.addEventListener('click', function(e) {
-                    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-                    console.log('🔘 [SIDEBAR] CLICK en botón COLAPSAR');
-                    console.log('   Estado actual → Nuevo estado:', isCollapsed, '→', !isCollapsed);
-                    
-                    e.preventDefault();
-                    e.stopPropagation();
-                    
-                    isCollapsed = !isCollapsed;
-                    localStorage.setItem('sidebarCollapsed', isCollapsed);
-                    applyCollapseState();
-                    console.log('   ✅ Colapso aplicado');
-                    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-                });
-                
-                console.log('✅ [SIDEBAR] Listener COLAPSAR registrado');
-            }
-            
-            // ============================================================
-            // SUBMENÚS - REEMPLAZAR para evitar listeners duplicados
-            // ============================================================
-            
-            console.log('📂 [SIDEBAR] Registrando SUBMENÚS...');
-            
-            const freshToggles = document.querySelectorAll('[data-submenu-toggle]');
-            
-            freshToggles.forEach((toggle, index) => {
-                const menuKey = toggle.getAttribute('data-submenu-toggle');
-                const content = document.querySelector(`[data-submenu-content="${menuKey}"]`);
-                const arrow = toggle.querySelector('.submenu-arrow');
-                
-                console.log(`   [${index}] ${menuKey} | Estado: ${content?.classList.contains('hidden') ? 'OCULTO' : 'VISIBLE'}`);
-                
-                // ✅ REEMPLAZAR elemento para eliminar listeners viejos
-                const newToggle = toggle.cloneNode(true);
-                toggle.parentNode.replaceChild(newToggle, toggle);
-                
-                let clickCounter = 0;
-                
-                newToggle.addEventListener('click', function(e) {
-                    clickCounter++;
-                    
-                    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-                    console.log(`📂 [SIDEBAR] CLIC #${clickCounter} en: ${menuKey}`);
-                    
-                    if (clickCounter > 1) {
-                        console.warn('   ⚠️ ¡DOBLE CLIC! Contador:', clickCounter);
-                    }
-                    
-                    e.preventDefault();
-                    e.stopPropagation();
-                    
-                    // ✅ Re-obtener contenido (puede haber cambiado)
-                    const currentContent = document.querySelector(`[data-submenu-content="${menuKey}"]`);
-                    const currentArrow = newToggle.querySelector('.submenu-arrow');
-                    
-                    if (currentContent) {
-                        const estabaOculto = currentContent.classList.contains('hidden');
-                        currentContent.classList.toggle('hidden');
-                        const ahoraOculto = currentContent.classList.contains('hidden');
-                        
-                        console.log(`   ${estabaOculto ? 'ABRIENDO' : 'CERRANDO'} → Ahora: ${ahoraOculto ? 'OCULTO' : 'VISIBLE'}`);
-                        
-                        if (currentArrow) {
-                            currentArrow.classList.toggle('rotate-90');
-                        }
-                    }
-                    
-                    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-                });
-            });
-            
-            console.log(`✅ [SIDEBAR] ${freshToggles.length} submenús registrados`);
-            
-            // ============================================================
-            // APLICAR ESTADO
-            // ============================================================
-            
-            applyCollapseState();
-            
-            console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-            console.log('✅ [SIDEBAR] INICIALIZACIÓN COMPLETA');
-            console.log('   Submenús:', freshToggles.length);
-            console.log('   URL:', window.location.href);
-            console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-            
-        }); // FIN DOMContentLoaded
-    } // FIN verificación window.__sidebarInitialized
-</script>
-
 <style>
-    .scrollbar-thin::-webkit-scrollbar {
-        width: 5px;
-        height: 5px;
+    nav::-webkit-scrollbar {
+        width: 4px;
     }
-    .scrollbar-thin::-webkit-scrollbar-track {
-        background: transparent;
+    nav::-webkit-scrollbar-track {
+        background: rgba(255, 255, 255, 0.1);
         border-radius: 10px;
     }
-    .scrollbar-thin::-webkit-scrollbar-thumb {
-        background: rgba(255, 255, 255, 0.2);
-        border-radius: 10px;
-    }
-    .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    nav::-webkit-scrollbar-thumb {
         background: rgba(255, 255, 255, 0.3);
+        border-radius: 10px;
     }
-    .scrollbar-thin {
-        scrollbar-width: thin;
-        scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+    .submenu-content {
+        overflow: hidden;
+        transition: max-height 0.3s ease-out;
+    }
+    .submenu-content:not(.hidden) {
+        max-height: 500px;
+    }
+    .submenu-content.hidden {
+        max-height: 0;
     }
 </style>
+
+<script>
+if (!window._sidebarJsExecuted) {
+    window._sidebarJsExecuted = true;
+    
+    document.addEventListener('DOMContentLoaded', function() {
+        const sidebar = document.getElementById('sidebar');
+        const collapseBtn = document.getElementById('collapseSidebarBtn');
+        const collapseIcon = document.getElementById('collapseIcon');
+        const sidebarTexts = document.querySelectorAll('.sidebar-text');
+        const sidebarHeader = document.getElementById('sidebarHeader');
+        const sidebarHeaderText = document.getElementById('sidebarHeaderText');
+        const sidebarFooterExpanded = document.getElementById('sidebarFooterExpanded');
+        const sidebarFooterCollapsed = document.getElementById('sidebarFooterCollapsed');
+        
+        let isCollapsed = localStorage.getItem('sidebarCollapsed') === 'true';
+        
+        function applyCollapseState() {
+            if (!sidebar) return;
+            if (isCollapsed) {
+                sidebar.style.width = '68px';
+                if (collapseIcon) collapseIcon.classList.add('rotate-180');
+                sidebarTexts.forEach(el => el.style.display = 'none');
+                if (sidebarHeader) sidebarHeader.classList.add('justify-center');
+                if (sidebarHeaderText) sidebarHeaderText.style.display = 'none';
+                if (sidebarFooterExpanded) sidebarFooterExpanded.style.display = 'none';
+                if (sidebarFooterCollapsed) sidebarFooterCollapsed.style.display = 'flex';
+            } else {
+                sidebar.style.width = '260px';
+                if (collapseIcon) collapseIcon.classList.remove('rotate-180');
+                sidebarTexts.forEach(el => el.style.display = '');
+                if (sidebarHeader) sidebarHeader.classList.remove('justify-center');
+                if (sidebarHeaderText) sidebarHeaderText.style.display = '';
+                if (sidebarFooterExpanded) sidebarFooterExpanded.style.display = '';
+                if (sidebarFooterCollapsed) sidebarFooterCollapsed.style.display = 'none';
+            }
+        }
+        
+        if (collapseBtn) {
+            const newBtn = collapseBtn.cloneNode(true);
+            collapseBtn.parentNode.replaceChild(newBtn, collapseBtn);
+            newBtn.addEventListener('click', function(e) {
+                e.preventDefault();
+                isCollapsed = !isCollapsed;
+                localStorage.setItem('sidebarCollapsed', isCollapsed);
+                applyCollapseState();
+            });
+        }
+        
+        const submenuToggles = document.querySelectorAll('[data-submenu-toggle]');
+        const submenuContents = document.querySelectorAll('[data-submenu-content]');
+        
+        function closeAllSubmenus() {
+            submenuContents.forEach(content => {
+                content.classList.add('hidden');
+                const toggle = document.querySelector(`[data-submenu-toggle="${content.getAttribute('data-submenu-content')}"]`);
+                if (toggle) {
+                    const arrow = toggle.querySelector('.submenu-arrow');
+                    if (arrow) arrow.classList.remove('rotate-90');
+                }
+            });
+        }
+        
+        submenuToggles.forEach(toggle => {
+            const menuKey = toggle.getAttribute('data-submenu-toggle');
+            const content = document.querySelector(`[data-submenu-content="${menuKey}"]`);
+            if (!content) return;
+            
+            const newToggle = toggle.cloneNode(true);
+            toggle.parentNode.replaceChild(newToggle, toggle);
+            
+            newToggle.addEventListener('click', function(e) {
+                e.preventDefault();
+                const isOpen = !content.classList.contains('hidden');
+                closeAllSubmenus();
+                if (!isOpen) {
+                    content.classList.remove('hidden');
+                    const arrow = newToggle.querySelector('.submenu-arrow');
+                    if (arrow) arrow.classList.add('rotate-90');
+                }
+            });
+        });
+        
+        applyCollapseState();
+    });
+}
+</script>
