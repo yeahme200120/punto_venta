@@ -22,6 +22,7 @@ return new class extends Migration
             $table->decimal('monto', 12, 2);
             $table->text('motivo');
             $table->enum('estado', ['pendiente', 'aprobada', 'rechazada', 'completada'])->default('pendiente');
+            $table->string('forma_pago', 50)->default('efectivo');
             $table->timestamp('autorizado_en')->nullable();
             $table->timestamps();
             

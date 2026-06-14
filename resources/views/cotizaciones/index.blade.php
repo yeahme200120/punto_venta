@@ -18,7 +18,7 @@
             <span class="text-lg">🏦</span>
             <div class="flex-1">
                 <p class="text-sm font-semibold text-gray-700">Caja activa:</p>
-                <select id="cajaActivaSelect" class="w-full mt-2 px-4 py-2 border rounded-xl focus:ring-2 focus:ring-indigo-500"
+                <select id="cajaActivaSelect" class="w-full px-4 py-2 mt-2 border rounded-xl focus:ring-2 focus:ring-indigo-500"
                         onchange="actualizarInfoCaja()">
                     @foreach($cajasActivas as $caja)
                         <option value="{{ $caja->id }}" 
@@ -32,7 +32,7 @@
                 </select>
             </div>
         </div>
-        <div id="cajaInfoDetalle" class="mt-3 p-3 bg-green-50 border border-green-200 rounded-xl hidden">
+        <div id="cajaInfoDetalle" class="hidden p-3 mt-3 border border-green-200 bg-green-50 rounded-xl">
             <div class="flex items-center gap-2 text-sm text-green-700">
                 <span>🏦</span>
                 <span class="font-medium" id="cajaNombre"></span>
@@ -44,7 +44,7 @@
         </div>
     </div>
 @elseif(isset($cajaAbierta) && $cajaAbierta)
-    <div class="p-3 mb-4 bg-green-50 border border-green-200 rounded-xl">
+    <div class="p-3 mb-4 border border-green-200 bg-green-50 rounded-xl">
         <div class="flex items-center gap-2 text-sm text-green-700">
             <span>🏦</span>
             <span class="font-medium">{{ $cajaAbierta->caja->nombre }}</span>
@@ -55,7 +55,7 @@
         </div>
     </div>
 @else
-    <div class="p-3 mb-4 bg-yellow-50 border border-yellow-200 rounded-xl">
+    <div class="p-3 mb-4 border border-yellow-200 bg-yellow-50 rounded-xl">
         <p class="text-sm text-yellow-700">⚠️ No hay caja abierta en esta sucursal</p>
     </div>
 @endif
@@ -121,7 +121,7 @@
                     </td>
                     <td class="px-6 py-4 font-bold text-right text-indigo-600">${{ number_format($cotizacion->total, 2) }}</td>
                     <td class="px-6 py-4 text-center">
-                        <span class="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded-full">
+                        <span class="px-2 py-1 text-xs text-blue-700 bg-blue-100 rounded-full">
                             {{ $cotizacion->detalles->count() }} prod.
                         </span>
                     </td>
@@ -159,6 +159,7 @@
                             @endcan
                         </div>
                     </td>
+                    
                 </tr>
                 @empty
                 <tr>

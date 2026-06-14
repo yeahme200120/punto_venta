@@ -7,6 +7,7 @@ use App\Models\CajaApertura;
 use App\Models\CajaMovimiento;
 use App\Models\CajaTransferencia;
 use App\Models\ContrasenaMaestra;
+use App\Models\FormaPago;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -255,10 +256,15 @@ class CajaService
     /**
      * Transferir entre cajas
      */
-    public static function transferirEntreCajas($origenId, $destinoId, $userId, $monto, $motivo)
+    public static function transferirEntreCajas($origenId, $destinoId, $userId, $monto, $motivo, $formaPago = 'efectivo')
     {
         DB::beginTransaction();
         try {
+            // Verificar que la forma de pago exista en el catálogo
+            $formaPagoExistente = FormaPago::where('clave', $formaPago)->where('activo_global', true)->first();
+            if (!$formaPagoExistente) {
+                throw new \Exception("La forma de pago '{$formaPago}' no es válida o está desactivada.");
+            }
             $aperturaOrigen = CajaApertura::where('caja_id', $origenId)
                 ->where('estado', 'abierta')
                 ->first();
@@ -279,6 +285,7 @@ class CajaService
                 'user_id' => $userId,
                 'monto' => $monto,
                 'motivo' => $motivo,
+                'forma_pago' => $formaPago,
                 'estado' => 'pendiente'
             ]);
 
@@ -290,9 +297,6 @@ class CajaService
             throw $e;
         }
     }
-
-
-    // app/Services/CajaService.php
 
     public static function aprobarTransferencia($transferenciaId, $passwordMaestra)
     {
@@ -334,6 +338,10 @@ class CajaService
                 throw new \Exception("Saldo insuficiente en caja origen. Saldo actual: $" . number_format($saldoOrigen, 2));
             }
 
+            // 🔥 Verificar que la forma de pago aún sea válida
+            $formaPagoExistente = FormaPago::where('clave', $transferencia->forma_pago)->where('activo_global', true)->first();
+            $formaPago = $formaPagoExistente ? $transferencia->forma_pago : 'efectivo';
+
             // Registrar egreso en caja origen
             CajaMovimiento::create([
                 'caja_apertura_id' => $aperturaOrigen->id,
@@ -341,7 +349,7 @@ class CajaService
                 'sucursal_id' => $aperturaOrigen->sucursal_id,
                 'tipo' => 'egreso',
                 'categoria' => 'transferencia',
-                'forma_pago' => 'transferencia',
+                'forma_pago' => $formaPago,
                 'monto' => $transferencia->monto,
                 'concepto' => "Transferencia a caja {$transferencia->cajaDestino->codigo} - {$transferencia->motivo}",
                 'referencia' => "TRANSF-{$transferencia->id}",
@@ -355,7 +363,7 @@ class CajaService
                 'sucursal_id' => $aperturaDestino->sucursal_id,
                 'tipo' => 'ingreso',
                 'categoria' => 'transferencia',
-                'forma_pago' => 'transferencia',
+                'forma_pago' => $formaPago,
                 'monto' => $transferencia->monto,
                 'concepto' => "Transferencia desde caja {$transferencia->cajaOrigen->codigo} - {$transferencia->motivo}",
                 'referencia' => "TRANSF-{$transferencia->id}",

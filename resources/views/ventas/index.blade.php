@@ -22,7 +22,7 @@
                 <div class="flex-1">
                     <p class="text-sm font-semibold text-gray-700">Selecciona la caja para operar:</p>
                     <select id="cajaActivaSelect"
-                        class="w-full mt-2 px-4 py-2 border rounded-xl focus:ring-2 focus:ring-indigo-500"
+                        class="w-full px-4 py-2 mt-2 border rounded-xl focus:ring-2 focus:ring-indigo-500"
                         onchange="guardarCajaSeleccionada()">
                         @foreach($cajasActivas as $caja)
                             <option value="{{ $caja->id }}" {{ $loop->first ? 'selected' : '' }}>
@@ -35,8 +35,7 @@
             </div>
         </div>
     @elseif(isset($cajaAbierta) && $cajaAbierta)
-        {{-- ✅ INFO DE CAJA ACTIVA (una sola) --}}
-        <div class="p-3 mb-4 bg-green-50 border border-green-200 rounded-xl">
+        <div class="p-3 mb-4 border border-green-200 bg-green-50 rounded-xl">
             <div class="flex items-center gap-2 text-sm text-green-700">
                 <span>🏦</span>
                 <span class="font-medium">{{ $cajaAbierta->caja->nombre }}</span>
@@ -48,7 +47,6 @@
             </div>
         </div>
     @else
-        {{-- ✅ SIN CAJA ABIERTA (UN SOLO BLOQUE) --}}
         <div class="flex items-center justify-between p-4 mb-4 border-l-4 border-yellow-400 bg-yellow-50 rounded-r-xl">
             <div class="flex items-center gap-3">
                 <span class="text-2xl">⚠️</span>
@@ -63,7 +61,6 @@
             @endcan
         </div>
     @endif
-
 
     <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {{-- Panel de productos --}}
@@ -251,8 +248,7 @@
         </div>
     </div>
 
-    {{-- Modal de pago con cards por cada forma de pago --}}
-    {{-- Modal de pago con cards por cada forma de pago --}}
+    {{-- Modal de pago mejorado --}}
     <div id="modalPago" class="fixed inset-0 z-50 items-center justify-center hidden bg-black/50 backdrop-blur-sm">
         <div class="w-full max-w-4xl p-6 bg-white rounded-2xl shadow-2xl max-h-[90vh] overflow-y-auto animate-fade-in-up">
             <div class="flex items-center justify-between mb-4">
@@ -265,30 +261,9 @@
                 </button>
             </div>
 
-            {{-- Checkbox para solicitar factura --}}
-            <div class="flex items-center justify-between p-3 mb-4 bg-yellow-50 rounded-xl">
-                <div class="flex items-center gap-3">
-                    <svg class="w-5 h-5 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                            d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z">
-                        </path>
-                    </svg>
-                    <div>
-                        <p class="text-sm font-medium text-yellow-800">¿Desea factura?</p>
-                        <p class="text-xs text-yellow-600">Se agregará el 16% de IVA al total</p>
-                    </div>
-                </div>
-                <label class="relative inline-flex items-center cursor-pointer">
-                    <input type="checkbox" id="incluirFactura" class="sr-only peer">
-                    <div
-                        class="w-11 h-6 bg-gray-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:bg-indigo-600 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all">
-                    </div>
-                </label>
-            </div>
-
             {{-- Resumen de la venta --}}
             <div
-                class="grid grid-cols-1 gap-4 p-4 mb-6 bg-gradient-to-r from-indigo-50 to-cyan-50 rounded-xl md:grid-cols-2 lg:grid-cols-4">
+                class="grid grid-cols-1 gap-4 p-4 mb-4 bg-gradient-to-r from-indigo-50 to-cyan-50 rounded-xl md:grid-cols-4">
                 <div class="text-center">
                     <span class="text-sm text-gray-500">Subtotal</span>
                     <p id="subtotalModal" class="text-xl font-bold text-indigo-600">$0.00</p>
@@ -302,14 +277,63 @@
                     <p id="totalPagar" class="text-2xl font-bold text-indigo-600">$0.00</p>
                 </div>
                 <div class="text-center">
-                    <span class="text-sm text-gray-500">Total pagado</span>
+                    <span class="text-sm text-gray-500">Pagado</span>
                     <p id="totalPagado" class="text-2xl font-bold text-green-600">$0.00</p>
                 </div>
             </div>
 
-            {{-- Métodos de pago disponibles --}}
+            {{-- 🔥 FALTANTE / POR PAGAR (EN ROJO) --}}
+            <div class="p-3 mb-4 text-center bg-red-50 rounded-xl">
+                <span class="text-sm text-gray-600">Faltante / Por pagar:</span>
+                <span id="faltanteMonto" class="ml-2 text-2xl font-bold text-red-600">$0.00</span>
+            </div>
+
+            {{-- Barra de progreso --}}
             <div class="mb-4">
-                <h4 class="mb-3 text-sm font-semibold text-gray-500 uppercase">Métodos de pago disponibles</h4>
+                <div class="flex justify-between mb-1 text-sm">
+                    <span>Progreso de pago:</span>
+                    <span id="porcentajeProgreso" class="font-medium">0%</span>
+                </div>
+                <div class="w-full bg-gray-200 rounded-full h-2.5">
+                    <div id="progressBar" class="bg-green-600 h-2.5 rounded-full transition-all" style="width: 0%"></div>
+                </div>
+            </div>
+
+            {{-- Tipo de pago: Simple o Mixto --}}
+            <div class="mb-4">
+                <label class="block mb-2 text-sm font-medium text-gray-700">Tipo de pago</label>
+                <div class="flex gap-3">
+                    <button type="button" id="btnPagoSimple"
+                        class="flex-1 py-2 text-sm font-medium text-white bg-indigo-600 rounded-xl">💵 Pago simple</button>
+                    <button type="button" id="btnPagoMixto"
+                        class="flex-1 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-xl">🔄 Pago mixto</button>
+                </div>
+            </div>
+
+            {{-- Modo Simple (una sola forma de pago, por defecto efectivo) --}}
+            <div id="modoSimple">
+                <div class="p-4 border rounded-xl bg-gray-50">
+                    <div class="flex items-center gap-3 mb-3">
+                        <span class="text-2xl">💵</span>
+                        <span class="font-medium">Efectivo</span>
+                    </div>
+                    <div class="relative">
+                        <span class="absolute text-gray-500 left-3 top-2.5">$</span>
+                        <input type="number" id="montoSimple" step="0.01" min="0"
+                            class="w-full py-3 pl-8 pr-4 text-lg border rounded-xl focus:ring-2 focus:ring-indigo-500"
+                            placeholder="Monto recibido">
+                    </div>
+                    <div id="cambioInfo" class="hidden p-3 mt-3 bg-green-100 rounded-xl">
+                        <div class="flex items-center justify-between">
+                            <span class="font-medium text-green-800">💰 Cambio a devolver:</span>
+                            <span id="cambioMonto" class="text-xl font-bold text-green-700">$0.00</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {{-- Modo Mixto (múltiples formas de pago) - DISEÑO ORIGINAL --}}
+            <div id="modoMixto" class="hidden">
                 <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                     @foreach($formasPago as $forma)
                         <div class="p-3 transition-all duration-200 bg-white border pago-card rounded-xl hover:shadow-md hover:border-indigo-300"
@@ -337,15 +361,15 @@
                         </div>
                     @endforeach
                 </div>
-            </div>
 
-            {{-- Resumen de pagos y cambio --}}
-            <div id="resumenPagosActual" class="mt-2"></div>
-
-            {{-- Cambio por método de pago --}}
-            <div id="cambioPorMetodo" class="hidden p-3 mt-3 bg-yellow-50 rounded-xl">
-                <p class="mb-2 text-sm font-semibold text-yellow-800">💰 Cambio a devolver por método:</p>
-                <div id="cambioDetalle" class="space-y-1"></div>
+                {{-- 🔥 Cambio en efectivo para modo mixto --}}
+                <div id="cambioInfoMixto" class="hidden p-3 mt-4 bg-green-100 rounded-xl">
+                    <div class="flex items-center justify-between">
+                        <span class="font-medium text-green-800">💰 Cambio total a devolver:</span>
+                        <span id="cambioMontoMixto" class="text-xl font-bold text-green-700">$0.00</span>
+                    </div>
+                    <p class="mt-1 text-xs text-green-600">El cambio se entregará en efectivo</p>
+                </div>
             </div>
 
             {{-- Botones de acción --}}
@@ -363,7 +387,8 @@
         <script>
             let carrito = [];
             let formasPagoData = @json($formasPago);
-            let incluirIva = false;
+            let modoPago = 'simple';
+            let totalVenta = 0;
 
             // ==================== FUNCIONES DEL CARRITO ====================
 
@@ -493,12 +518,12 @@
 
                 if (!carrito || carrito.length === 0) {
                     container.innerHTML = `<div class="flex flex-col items-center justify-center py-12 text-center">
-                                                                                                                                    <svg class="w-16 h-16 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                                                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-1.5 6M17 13l1.5 6M9 21h6M12 18v3"></path>
-                                                                                                                                    </svg>
-                                                                                                                                    <p class="mt-2 text-gray-400">🛒 No hay productos en el carrito</p>
-                                                                                                                                    <p class="text-xs text-gray-400">Selecciona productos para comenzar</p>
-                                                                                                                                </div>`;
+                                                                <svg class="w-16 h-16 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-1.5 6M17 13l1.5 6M9 21h6M12 18v3"></path>
+                                                                </svg>
+                                                                <p class="mt-2 text-gray-400">🛒 No hay productos en el carrito</p>
+                                                                <p class="text-xs text-gray-400">Selecciona productos para comenzar</p>
+                                                            </div>`;
                     document.getElementById('subtotal').innerHTML = '$0.00';
                     document.getElementById('iva').innerHTML = '$0.00';
                     document.getElementById('total').innerHTML = '$0.00';
@@ -512,133 +537,130 @@
                     const totalItem = precio * cantidad;
                     subtotal += totalItem;
                     html += `<div class="flex items-center justify-between p-3 transition-all bg-white rounded-lg shadow-sm hover:shadow-md">
-                                                                                                                                    <div class="flex-1">
-                                                                                                                                        <p class="font-medium text-gray-800">${escapeHtml(item.nombre)}</p>
-                                                                                                                                        <div class="flex items-center gap-2 mt-1">
-                                                                                                                                            <button onclick="actualizarCantidad(${index}, ${cantidad - 1})" class="w-6 h-6 text-gray-600 transition-colors bg-gray-100 rounded-full hover:bg-red-100 hover:text-red-600">-</button>
-                                                                                                                                            <span class="w-8 text-sm font-medium text-center">${cantidad}</span>
-                                                                                                                                            <button onclick="actualizarCantidad(${index}, ${cantidad + 1})" class="w-6 h-6 text-gray-600 transition-colors bg-gray-100 rounded-full hover:bg-green-100 hover:text-green-600">+</button>
-                                                                                                                                            <span class="text-xs text-gray-400">$${precio.toFixed(2)} c/u</span>
-                                                                                                                                        </div>
-                                                                                                                                    </div>
-                                                                                                                                    <div class="text-right">
-                                                                                                                                        <p class="font-semibold text-indigo-600">$${totalItem.toFixed(2)}</p>
-                                                                                                                                        <button onclick="eliminarProducto(${index})" class="text-xs text-red-500 hover:text-red-700">Eliminar</button>
-                                                                                                                                    </div>
-                                                                                                                                </div>`;
+                                                                <div class="flex-1">
+                                                                    <p class="font-medium text-gray-800">${escapeHtml(item.nombre)}</p>
+                                                                    <div class="flex items-center gap-2 mt-1">
+                                                                        <button onclick="actualizarCantidad(${index}, ${cantidad - 1})" class="w-6 h-6 text-gray-600 transition-colors bg-gray-100 rounded-full hover:bg-red-100 hover:text-red-600">-</button>
+                                                                        <span class="w-8 text-sm font-medium text-center">${cantidad}</span>
+                                                                        <button onclick="actualizarCantidad(${index}, ${cantidad + 1})" class="w-6 h-6 text-gray-600 transition-colors bg-gray-100 rounded-full hover:bg-green-100 hover:text-green-600">+</button>
+                                                                        <span class="text-xs text-gray-400">$${precio.toFixed(2)} c/u</span>
+                                                                    </div>
+                                                                </div>
+                                                                <div class="text-right">
+                                                                    <p class="font-semibold text-indigo-600">$${totalItem.toFixed(2)}</p>
+                                                                    <button onclick="eliminarProducto(${index})" class="text-xs text-red-500 hover:text-red-700">Eliminar</button>
+                                                                </div>
+                                                            </div>`;
                 });
 
                 const subtotalRedondeado = Math.round(subtotal * 100) / 100;
-                const iva = incluirIva ? Math.round(subtotalRedondeado * 0.16 * 100) / 100 : 0;
-                const total = Math.round((subtotalRedondeado + iva) * 100) / 100;
+                const iva = Math.round(subtotalRedondeado * 0.16 * 100) / 100;
+                totalVenta = Math.round((subtotalRedondeado + iva) * 100) / 100;
 
                 container.innerHTML = html;
                 document.getElementById('subtotal').innerHTML = `$${subtotalRedondeado.toFixed(2)}`;
                 document.getElementById('iva').innerHTML = `$${iva.toFixed(2)}`;
-                document.getElementById('total').innerHTML = `$${total.toFixed(2)}`;
+                document.getElementById('total').innerHTML = `$${totalVenta.toFixed(2)}`;
             }
 
-            // ==================== PAGOS MIXTOS ====================
+            // ==================== ACTUALIZAR PAGOS ====================
 
-            function actualizarTotalesPagos() {
-                let totalPagado = 0;
-                const pagosDetalle = [];
-                const pagosTemp = [];
+            function actualizarTotalesGenerales(totalPagado) {
+                const pagado = Math.min(totalPagado, totalVenta);
+                const faltante = Math.max(0, totalVenta - totalPagado);
+                const excedente = Math.max(0, totalPagado - totalVenta);
 
-                document.querySelectorAll('.pago-card').forEach(card => {
-                    let monto = parseFloat(card.querySelector('.monto-pago-input').value) || 0;
-                    monto = Math.round(monto * 100) / 100;
-                    const formaNombre = card.querySelector('.font-medium').innerText;
-                    const formaId = card.dataset.formaId;
-                    if (monto > 0) {
-                        pagosDetalle.push({ nombre: formaNombre, monto: monto });
-                        pagosTemp.push({ forma_pago_id: formaId, nombre: formaNombre, monto: monto });
-                        totalPagado += monto;
-                    }
-                });
+                document.getElementById('totalPagado').innerHTML = `$${pagado.toFixed(2)}`;
+                document.getElementById('faltanteMonto').innerHTML = `$${faltante.toFixed(2)}`;
 
-                totalPagado = Math.round(totalPagado * 100) / 100;
+                const progressPercent = totalVenta > 0 ? (pagado / totalVenta) * 100 : 0;
+                document.getElementById('progressBar').style.width = `${progressPercent}%`;
+                document.getElementById('porcentajeProgreso').innerHTML = `${Math.round(progressPercent)}%`;
 
-                const subtotal = Math.round(carrito.reduce((sum, item) => sum + (item.precio * item.cantidad), 0) * 100) / 100;
-                const iva = incluirIva ? Math.round(subtotal * 0.16 * 100) / 100 : 0;
-                const totalVenta = Math.round((subtotal + iva) * 100) / 100;
-                const sobrante = Math.round((totalPagado - totalVenta) * 100) / 100;
+                return { pagado, faltante, excedente };
+            }
 
-                // Actualizar resumen básico
-                document.getElementById('subtotalModal').innerHTML = `$${subtotal.toFixed(2)}`;
-                document.getElementById('ivaModal').innerHTML = `$${iva.toFixed(2)}`;
-                document.getElementById('totalPagar').innerHTML = `$${totalVenta.toFixed(2)}`;
-                document.getElementById('totalPagado').innerHTML = `$${totalPagado.toFixed(2)}`;
+            // ==================== PAGO SIMPLE ====================
 
-                // Calcular cambio por método
-                const { cambioDistribuido, sobrante: sobranteCalculado } = calcularCambioPorMetodo(pagosTemp, totalVenta);
+            function actualizarPagoSimple() {
+                const montoSimple = parseFloat(document.getElementById('montoSimple').value) || 0;
+                const totalPagado = montoSimple;
+                const excedente = Math.max(0, totalPagado - totalVenta);
 
-                const cambioContainer = document.getElementById('cambioPorMetodo');
-                const cambioDetalle = document.getElementById('cambioDetalle');
+                actualizarTotalesGenerales(totalPagado);
 
-                if (sobrante > 0 && cambioDistribuido.length > 0) {
-                    cambioContainer.classList.remove('hidden');
-                    let cambioHtml = '';
-                    cambioDistribuido.forEach(item => {
-                        cambioHtml += `
-                                                                <div class="flex items-center justify-between p-2 text-sm bg-white rounded-lg">
-                                                                    <span>💰 ${item.nombre}</span>
-                                                                    <div class="text-right">
-                                                                        <span class="mr-2 text-gray-400 line-through">$${item.monto_original.toFixed(2)}</span>
-                                                                        <span class="font-bold text-green-600">→ $${item.monto_ajustado.toFixed(2)}</span>
-                                                                        <span class="ml-2 text-yellow-600">(Cambio: $${item.cambio.toFixed(2)})</span>
-                                                                    </div>
-                                                                </div>
-                                                            `;
-                    });
-                    cambioDetalle.innerHTML = cambioHtml;
+                const cambioInfo = document.getElementById('cambioInfo');
+                const cambioMonto = document.getElementById('cambioMonto');
+
+                if (excedente > 0) {
+                    cambioInfo.classList.remove('hidden');
+                    cambioMonto.innerHTML = `$${excedente.toFixed(2)}`;
                 } else {
-                    cambioContainer.classList.add('hidden');
+                    cambioInfo.classList.add('hidden');
                 }
 
-                return { totalPagado, totalVenta, sobrante, pagosDetalle, subtotal, iva, cambioDistribuido };
+                return { monto: montoSimple, excedente };
             }
 
-            function inicializarEventosPagos() {
-                // Checkbox de factura
-                const facturaCheckbox = document.getElementById('incluirFactura');
-                if (facturaCheckbox) {
-                    facturaCheckbox.addEventListener('change', function () {
-                        incluirIva = this.checked;
-                        actualizarCarrito();
-                        actualizarTotalesPagos();
-                    });
-                }
-
-                document.querySelectorAll('.pago-card').forEach(card => {
-                    const montoInput = card.querySelector('.monto-pago-input');
-                    const referenciaInput = card.querySelector('.referencia-input');
-                    const requiereRef = card.dataset.requiereReferencia === '1';
-                    if (requiereRef) referenciaInput.classList.remove('hidden');
-                    montoInput.addEventListener('input', function () {
-                        let value = parseFloat(this.value) || 0;
-                        if (value < 0) this.value = 0;
-                        actualizarTotalesPagos();
-                    });
-                    montoInput.addEventListener('keydown', function (e) {
-                        if (e.key === '-' || e.key === 'e') e.preventDefault();
-                    });
+            function actualizarPagoMixto() {
+                let totalPagado = 0;
+                document.querySelectorAll('#modoMixto .monto-pago-input').forEach(input => {
+                    let monto = parseFloat(input.value) || 0;
+                    totalPagado += Math.round(monto * 100) / 100;
                 });
+
+                const { pagado, faltante, excedente } = actualizarTotalesGenerales(totalPagado);
+
+                // Mostrar cambio en efectivo si hay excedente
+                const cambioInfoMixto = document.getElementById('cambioInfoMixto');
+                const cambioMontoMixto = document.getElementById('cambioMontoMixto');
+
+                if (excedente > 0.01) {
+                    cambioInfoMixto.classList.remove('hidden');
+                    cambioMontoMixto.innerHTML = `$${excedente.toFixed(2)}`;
+                } else {
+                    cambioInfoMixto.classList.add('hidden');
+                }
+
+                // 🔥 Mostrar advertencia si el pago es insuficiente
+                const faltanteElement = document.getElementById('faltanteMonto');
+                if (faltante > 0.01) {
+                    faltanteElement.classList.add('text-red-600', 'font-bold');
+                }
+
+                return { totalPagado, pagado, faltante, excedente };
             }
+
+            // ==================== INICIALIZACIÓN MODAL ====================
 
             function mostrarModalPago() {
                 if (carrito.length === 0) {
                     Swal.fire('Carrito vacío', 'Agrega productos al carrito', 'warning');
                     return;
                 }
-                const facturaCheckbox = document.getElementById('incluirFactura');
-                if (facturaCheckbox) {
-                    facturaCheckbox.checked = incluirIva;
-                }
-                document.querySelectorAll('.monto-pago-input').forEach(input => input.value = '0');
-                actualizarTotalesPagos();
+
+                // Resetear valores
+                document.getElementById('montoSimple').value = '';
+                document.querySelectorAll('#modoMixto .monto-pago-input').forEach(input => input.value = '0');
+
+                // Actualizar totales en modal
+                const subtotal = totalVenta / 1.16;
+                const iva = totalVenta - subtotal;
+                document.getElementById('subtotalModal').innerHTML = `$${subtotal.toFixed(2)}`;
+                document.getElementById('ivaModal').innerHTML = `$${iva.toFixed(2)}`;
+                document.getElementById('totalPagar').innerHTML = `$${totalVenta.toFixed(2)}`;
+                document.getElementById('totalPagado').innerHTML = `$0.00`;
+                document.getElementById('faltanteMonto').innerHTML = `$${totalVenta.toFixed(2)}`;
+                document.getElementById('progressBar').style.width = '0%';
+                document.getElementById('porcentajeProgreso').innerHTML = '0%';
+                document.getElementById('cambioInfo')?.classList.add('hidden');
+                document.getElementById('cambioInfoMixto')?.classList.add('hidden');
+
+                // Mostrar modal
                 document.getElementById('modalPago').classList.remove('hidden');
                 document.getElementById('modalPago').classList.add('flex');
+
+                setTimeout(() => document.getElementById('montoSimple')?.focus(), 100);
             }
 
             function cerrarModalPago() {
@@ -646,163 +668,146 @@
                 document.getElementById('modalPago').classList.remove('flex');
             }
 
-           async function confirmarVentaContado() {
-    const pagos = [];
-    let error = false;
+            // ==================== TIPO DE PAGO ====================
 
-    // ✅ Obtener caja seleccionada
-    const cajaSelect = document.getElementById('cajaActivaSelect');
-    let cajaAperturaId = null;
-    
-    if (cajaSelect) {
-        cajaAperturaId = cajaSelect.value;
-    } else {
-        cajaAperturaId = {{ isset($cajaAbierta) && $cajaAbierta ? $cajaAbierta->id : 'null' }};
-    }
-    
-    console.log('🔑 cajaAperturaId:', cajaAperturaId, '| Tipo:', typeof cajaAperturaId);
+            function setModoPago(modo) {
+                modoPago = modo;
+                const modoSimple = document.getElementById('modoSimple');
+                const modoMixto = document.getElementById('modoMixto');
+                const btnSimple = document.getElementById('btnPagoSimple');
+                const btnMixto = document.getElementById('btnPagoMixto');
 
-    if (!cajaAperturaId || cajaAperturaId === 'null' || cajaAperturaId === null) {
-        Swal.fire({
-            icon: 'error',
-            title: 'Error',
-            text: 'No hay caja seleccionada. Recarga la página.',
-            confirmButtonColor: '#ef4444'
-        });
-        return;
-    }
-
-    document.querySelectorAll('.pago-card').forEach(card => {
-        const formaPagoId = card.dataset.formaId;
-        let monto = parseFloat(card.querySelector('.monto-pago-input').value) || 0;
-        monto = Math.round(monto * 100) / 100;
-        const referencia = card.querySelector('.referencia-input')?.value || '';
-
-        if (monto > 0) {
-            if (!formaPagoId) {
-                Swal.fire('Error', 'Forma de pago no válida', 'warning');
-                error = true;
-                return;
+                if (modo === 'simple') {
+                    modoSimple.classList.remove('hidden');
+                    modoMixto.classList.add('hidden');
+                    btnSimple.className = 'flex-1 py-2 text-sm font-medium text-white bg-indigo-600 rounded-xl';
+                    btnMixto.className = 'flex-1 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-xl';
+                    actualizarPagoSimple();
+                } else {
+                    modoSimple.classList.add('hidden');
+                    modoMixto.classList.remove('hidden');
+                    btnSimple.className = 'flex-1 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-xl';
+                    btnMixto.className = 'flex-1 py-2 text-sm font-medium text-white bg-indigo-600 rounded-xl';
+                    actualizarPagoMixto();
+                }
             }
-            pagos.push({
-                forma_pago_id: formaPagoId,
-                monto: monto,
-                referencia: referencia || null,
-                nombre: formasPagoData.find(f => f.id == formaPagoId)?.nombre || 'Desconocido'
-            });
-        }
-    });
 
-    if (error) return;
-    if (pagos.length === 0) {
-        Swal.fire('Error', 'Debes ingresar al menos un monto de pago', 'warning');
-        return;
-    }
+            async function confirmarVentaContado() {
+                const cajaSelect = document.getElementById('cajaActivaSelect');
+                let cajaAperturaId = cajaSelect?.value || {{ isset($cajaAbierta) && $cajaAbierta ? $cajaAbierta->id : 'null' }};
 
-    const subtotal = Math.round(carrito.reduce((sum, item) => sum + (item.precio * item.cantidad), 0) * 100) / 100;
-    const iva = incluirIva ? Math.round(subtotal * 0.16 * 100) / 100 : 0;
-    const totalVenta = Math.round((subtotal + iva) * 100) / 100;
-    const totalPagos = Math.round(pagos.reduce((sum, p) => sum + p.monto, 0) * 100) / 100;
+                if (!cajaAperturaId || cajaAperturaId === 'null') {
+                    Swal.fire({ icon: 'error', title: 'Error', text: 'No hay caja seleccionada.' });
+                    return;
+                }
 
-    if (totalPagos < totalVenta - 0.01) {
-        const faltante = Math.round((totalVenta - totalPagos) * 100) / 100;
-        Swal.fire({
-            title: '⚠️ Pago insuficiente',
-            html: `<div class="text-center">
-                <p class="text-lg font-semibold text-red-700">Faltante: $${faltante.toFixed(2)}</p>
-                <p class="mt-2 text-sm text-gray-500">Total pagado: $${totalPagos.toFixed(2)} | Total venta: $${totalVenta.toFixed(2)}</p>
-            </div>`,
-            icon: 'warning',
-            confirmButtonText: 'Ajustar pagos',
-            confirmButtonColor: '#ef4444'
-        });
-        return;
-    }
+                let pagos = [];
+                let subtotal = totalVenta / 1.16;
+                let iva = totalVenta - subtotal;
 
-    const { cambioDistribuido } = calcularCambioPorMetodo(pagos, totalVenta);
-
-    let pagosFinales = [...pagos];
-    for (let cambio of cambioDistribuido) {
-        const index = pagosFinales.findIndex(p => p.forma_pago_id == cambio.forma_pago_id);
-        if (index !== -1) pagosFinales[index].monto = cambio.monto_ajustado;
-    }
-    pagosFinales = pagosFinales.filter(p => p.monto > 0);
-
-    let resumenHtml = `
-        <div class="text-left">
-            <div class="p-4 mb-4 ${totalPagos > totalVenta ? 'bg-green-50' : 'bg-gray-50'} rounded-xl">
-                <div class="flex justify-between mb-2"><span>Subtotal:</span><span class="font-bold">$${subtotal.toFixed(2)}</span></div>
-                ${incluirIva ? `<div class="flex justify-between mb-2"><span>IVA (16%):</span><span class="font-bold">$${iva.toFixed(2)}</span></div>` : ''}
-                <div class="flex justify-between pt-2 border-t"><span>Total:</span><span class="font-bold text-indigo-600">$${totalVenta.toFixed(2)}</span></div>
-                <div class="flex justify-between mt-2"><span>Pagado:</span><span class="font-bold text-green-600">$${totalPagos.toFixed(2)}</span></div>
-            </div>
-            <div class="space-y-2">
-                <p class="text-sm font-semibold">Formas de pago:</p>
-                ${pagosFinales.map(p => `<div class="flex justify-between p-2 bg-gray-50 rounded-lg"><span>${p.nombre}</span><span class="font-bold">$${p.monto.toFixed(2)}</span></div>`).join('')}
-            </div>
-        </div>`;
-
-    const confirm = await Swal.fire({
-        title: totalPagos > totalVenta ? '💰 Confirmar venta con cambio' : '✅ Confirmar venta',
-        html: resumenHtml,
-        icon: 'success',
-        showCancelButton: true,
-        confirmButtonText: '✅ Confirmar',
-        cancelButtonText: 'Cancelar',
-        confirmButtonColor: '#10b981',
-        cancelButtonColor: '#6b7280',
-        width: '550px'
-    });
-
-    if (confirm.isConfirmed) {
-        Swal.fire({ title: 'Procesando...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
-        
-        try {
-            console.log('📤 Enviando venta...', { cajaAperturaId, items: carrito.length, pagos: pagosFinales.length });
-            
-            const response = await axios.post('{{ route("ventas.contado.store") }}', {
-                items: carrito,
-                pagos: pagosFinales,
-                incluir_iva: incluirIva,
-                caja_apertura_id: cajaAperturaId,
-                cambio_detalle: cambioDistribuido,
-                observaciones: ''
-            });
-
-            console.log('📥 Respuesta:', response.data);
-
-            if (response.data.success) {
-                await Swal.fire({
-                    title: '🎉 ¡Venta exitosa!',
-                    html: `<div class="text-center">
-                        <p class="text-2xl font-bold">${response.data.folio}</p>
-                        <p class="mt-2">Total: <strong>$${totalVenta.toFixed(2)}</strong></p>
-                    </div>`,
-                    icon: 'success',
-                    confirmButtonText: '🧾 Imprimir ticket',
-                    confirmButtonColor: '#4f46e5',
-                    showCancelButton: true,
-                    cancelButtonText: 'Nueva venta',
-                    cancelButtonColor: '#6b7280'
-                }).then((result) => {
-                    if (result.isConfirmed) {
-                        window.open(`/ventas/${response.data.venta_id}/ticket`, '_blank');
+                if (modoPago === 'simple') {
+                    const montoSimple = parseFloat(document.getElementById('montoSimple').value) || 0;
+                    if (montoSimple < totalVenta - 0.01) {
+                        Swal.fire({ icon: 'warning', title: 'Pago insuficiente', text: `Faltante: $${(totalVenta - montoSimple).toFixed(2)}` });
+                        return;
                     }
-                    carrito = [];
-                    actualizarCarrito();
-                    window.dispatchEvent(new CustomEvent('carrito-actualizado'));
-                    cerrarModalPago();
-                });
-            } else {
-                throw new Error(response.data.message || 'Error desconocido');
+                    const efectivo = formasPagoData.find(f => f.clave === 'efectivo');
+                    pagos.push({ forma_pago_id: efectivo?.id || formasPagoData[0]?.id, monto: totalVenta, referencia: null });
+                } else {
+                    // Modo mixto: recolectar pagos originales
+                    const pagosOriginales = [];
+                    document.querySelectorAll('#modoMixto [data-forma-id]').forEach(card => {
+                        const formaPagoId = card.dataset.formaId;
+                        let monto = parseFloat(card.querySelector('.monto-pago-input').value) || 0;
+                        if (monto > 0) {
+                            pagosOriginales.push({ forma_pago_id: formaPagoId, monto: monto, referencia: null });
+                        }
+                    });
+
+                    const totalPagado = pagosOriginales.reduce((sum, p) => sum + p.monto, 0);
+                    const excedente = totalPagado - totalVenta;
+
+                    if (totalPagado < totalVenta - 0.01) {
+                        Swal.fire({ icon: 'warning', title: 'Pago insuficiente', text: `Faltante: $${(totalVenta - totalPagado).toFixed(2)}` });
+                        return;
+                    }
+
+                    // Ajustar pagos si hay excedente
+                    if (excedente > 0) {
+                        let restoExcedente = excedente;
+                        for (let pago of pagosOriginales) {
+                            if (restoExcedente <= 0.01) break;
+
+                            if (pago.monto >= restoExcedente + 0.01) {
+                                pago.monto = Math.round((pago.monto - restoExcedente) * 100) / 100;
+                                restoExcedente = 0;
+                            } else {
+                                restoExcedente = Math.round((restoExcedente - pago.monto) * 100) / 100;
+                                pago.monto = 0;
+                            }
+                        }
+                    }
+
+                    // Filtrar pagos con monto > 0
+                    pagos = pagosOriginales.filter(p => p.monto > 0.01);
+
+                    // Validar que la suma sea igual al total
+                    const sumaAjustada = pagos.reduce((sum, p) => sum + p.monto, 0);
+                    if (Math.abs(sumaAjustada - totalVenta) > 0.02) {
+                        console.error('Error en ajuste de pagos', { sumaAjustada, totalVenta });
+                        Swal.fire({ icon: 'error', title: 'Error', text: 'Error al calcular los pagos. Intenta de nuevo.' });
+                        return;
+                    }
+                }
+
+                // 🔥 MOSTRAR CONFIRMACIÓN ANTES DE ENVIAR
+                const confirmed = await mostrarConfirmacionVenta(pagos, totalVenta, subtotal, iva);
+
+                if (!confirmed) {
+                    return; // Usuario canceló
+                }
+
+                Swal.fire({ title: 'Procesando venta...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+
+                try {
+                    const response = await axios.post('{{ route("ventas.contado.store") }}', {
+                        items: carrito,
+                        pagos: pagos,
+                        incluir_iva: true,
+                        caja_apertura_id: cajaAperturaId,
+                        observaciones: ''
+                    });
+
+                    if (response.data.success) {
+                        await Swal.fire({
+                            title: '🎉 ¡Venta exitosa!',
+                            html: `<div class="text-center">
+                            <p class="text-2xl font-bold text-indigo-600">${response.data.folio}</p>
+                            <p class="mt-2">Total: <strong>$${totalVenta.toFixed(2)}</strong></p>
+                        </div>`,
+                            icon: 'success',
+                            confirmButtonText: '🧾 Imprimir ticket',
+                            showCancelButton: true,
+                            cancelButtonText: 'Nueva venta',
+                            confirmButtonColor: '#4f46e5'
+                        }).then((result) => {
+                            if (result.isConfirmed) {
+                                window.open(`/ventas/${response.data.venta_id}/ticket`, '_blank');
+                            }
+                        });
+
+                        carrito = [];
+                        actualizarCarrito();
+                        window.dispatchEvent(new CustomEvent('carrito-actualizado'));
+                        cerrarModalPago();
+                    } else {
+                        throw new Error(response.data.message || 'Error desconocido');
+                    }
+                } catch (error) {
+                    const errorMsg = error.response?.data?.message || error.message || 'Error al registrar venta';
+                    Swal.fire('Error', errorMsg, 'error');
+                }
             }
-        } catch (error) {
-            console.error('❌ Error:', error);
-            const msg = error.response?.data?.message || error.message || 'Error al registrar venta';
-            Swal.fire('Error', msg, 'error');
-        }
-    }
-}
 
             // ==================== VENTA CRÉDITO ====================
 
@@ -811,10 +816,7 @@
                     Swal.fire('Carrito vacío', 'Agrega productos al carrito', 'warning');
                     return;
                 }
-                const subtotal = Math.round(carrito.reduce((sum, item) => sum + (item.precio * item.cantidad), 0) * 100) / 100;
-                const iva = incluirIva ? Math.round(subtotal * 0.16 * 100) / 100 : 0;
-                const total = subtotal + iva;
-                document.getElementById('totalCredito').innerText = total.toFixed(2);
+                document.getElementById('totalCredito').innerText = totalVenta.toFixed(2);
                 document.getElementById('numPagos').value = 1;
                 calcularMontoPorPago();
                 document.getElementById('modalCredito').classList.remove('hidden');
@@ -827,15 +829,10 @@
             }
 
             function calcularMontoPorPago() {
-                const subtotal = Math.round(carrito.reduce((sum, item) => sum + (item.precio * item.cantidad), 0) * 100) / 100;
-                const iva = incluirIva ? Math.round(subtotal * 0.16 * 100) / 100 : 0;
-                const total = subtotal + iva;
                 const numPagos = parseInt(document.getElementById('numPagos').value) || 1;
-                const montoPorPago = total / numPagos;
+                const montoPorPago = totalVenta / numPagos;
                 document.getElementById('montoPorPago').innerHTML = `$${montoPorPago.toFixed(2)}`;
             }
-
-            document.getElementById('numPagos')?.addEventListener('input', calcularMontoPorPago);
 
             async function confirmarVentaCredito() {
                 const clienteId = document.getElementById('clienteId').value;
@@ -843,6 +840,7 @@
                     Swal.fire('Cliente requerido', 'Selecciona un cliente para la venta a crédito', 'warning');
                     return;
                 }
+
                 const confirm = await Swal.fire({
                     title: '¿Confirmar venta a crédito?',
                     text: 'Se generarán los pagarés correspondientes',
@@ -851,6 +849,7 @@
                     confirmButtonText: 'Sí, generar crédito',
                     cancelButtonText: 'Cancelar'
                 });
+
                 if (confirm.isConfirmed) {
                     try {
                         const response = await axios.post('{{ route("ventas.credito.store") }}', {
@@ -858,7 +857,7 @@
                             cliente_id: clienteId,
                             plazo: document.getElementById('plazo').value,
                             num_pagos: document.getElementById('numPagos').value,
-                            incluir_iva: incluirIva
+                            incluir_iva: true
                         });
                         if (response.data.success) {
                             Swal.fire({
@@ -887,37 +886,48 @@
                     Swal.fire('Carrito vacío', 'Agrega productos al carrito', 'warning');
                     return;
                 }
+
                 const { value: formValues } = await Swal.fire({
                     title: 'Generar Cotización',
                     html: `<div class="text-left">
-                                                                                                                                    <div class="mb-3">
-                                                                                                                                        <label class="block mb-1 text-sm font-medium text-gray-700">Cliente (opcional)</label>
-                                                                                                                                        <select id="clienteCotizacion" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500">
-                                                                                                                                            <option value="">Cliente mostrador</option>
-                                                                                                                                            @foreach($clientes as $cliente)
-                                                                                                                                                <option value="{{ $cliente->id }}">{{ $cliente->nombre }}</option>
-                                                                                                                                            @endforeach
-                                                                                                                                        </select>
-                                                                                                                                    </div>
-                                                                                                                                    <div class="mb-3">
-                                                                                                                                        <label class="block mb-1 text-sm font-medium text-gray-700">Días de validez</label>
-                                                                                                                                        <input type="number" id="diasValidez" value="7" min="1" max="90" class="w-full px-3 py-2 border border-gray-300 rounded-lg">
-                                                                                                                                    </div>
-                                                                                                                                    <div class="mb-3">
-                                                                                                                                        <label class="block mb-1 text-sm font-medium text-gray-700">Observaciones</label>
-                                                                                                                                        <textarea id="observaciones" rows="2" class="w-full px-3 py-2 border border-gray-300 rounded-lg"></textarea>
-                                                                                                                                    </div>
-                                                                                                                                </div>`,
+                                                                <div class="mb-3">
+                                                                    <label class="block mb-1 text-sm font-medium text-gray-700">Cliente (opcional)</label>
+                                                                    <select id="clienteCotizacion" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500">
+                                                                        <option value="">Cliente mostrador</option>
+                                                                        @foreach($clientes as $cliente)
+                                                                            <option value="{{ $cliente->id }}">{{ $cliente->nombre }}</option>
+                                                                        @endforeach
+                                                                    </select>
+                                                                </div>
+                                                                <div class="mb-3">
+                                                                    <label class="block mb-1 text-sm font-medium text-gray-700">Vigencia de la cotización *</label>
+                                                                    <select id="diasValidez" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500">
+                                                                        <option value="1">📅 1 día</option>
+                                                                        <option value="3">📅 3 días</option>
+                                                                        <option value="5">📅 5 días</option>
+                                                                        <option value="7" selected>📅 7 días (1 semana)</option>
+                                                                        <option value="15">📅 15 días</option>
+                                                                        <option value="30">📅 30 días (1 mes)</option>
+                                                                        <option value="60">📅 60 días (2 meses)</option>
+                                                                        <option value="90">📅 90 días (3 meses)</option>
+                                                                    </select>
+                                                                </div>
+                                                                <div class="mb-3">
+                                                                    <label class="block mb-1 text-sm font-medium text-gray-700">Observaciones</label>
+                                                                    <textarea id="observaciones" rows="2" class="w-full px-3 py-2 border rounded-lg"></textarea>
+                                                                </div>
+                                                            </div>`,
                     showCancelButton: true,
                     confirmButtonText: '📄 Generar Cotización',
                     cancelButtonText: 'Cancelar',
                     confirmButtonColor: '#f97316',
                     preConfirm: () => ({
                         clienteId: document.getElementById('clienteCotizacion').value,
-                        diasValidez: document.getElementById('diasValidez').value,
+                        diasValidez: parseInt(document.getElementById('diasValidez').value),
                         observaciones: document.getElementById('observaciones').value
                     })
                 });
+
                 if (formValues) {
                     try {
                         const response = await axios.post('{{ route("cotizaciones.store") }}', {
@@ -929,14 +939,12 @@
                         if (response.data.success) {
                             Swal.fire({
                                 title: '¡Cotización generada!',
-                                text: `Folio: ${response.data.folio}`,
+                                html: `<div class="text-center"><p class="text-2xl font-bold text-orange-600">${response.data.folio}</p><p class="mt-2 text-sm">Válida por <strong>${formValues.diasValidez} días</strong></p></div>`,
                                 icon: 'success',
-                                confirmButtonText: 'Ver PDF',
+                                confirmButtonText: '📄 Ver PDF',
                                 confirmButtonColor: '#f97316'
                             }).then((result) => {
-                                if (result.isConfirmed) {
-                                    window.open(`/cotizaciones/${response.data.id}/pdf`, '_blank');
-                                }
+                                if (result.isConfirmed) window.open(`/cotizaciones/${response.data.id}/pdf`, '_blank');
                             });
                             carrito = [];
                             actualizarCarrito();
@@ -960,6 +968,21 @@
 
             document.getElementById('buscarProducto')?.addEventListener('input', filtrarProductos);
             document.getElementById('categoriaFilter')?.addEventListener('change', filtrarProductos);
+            document.getElementById('limpiarCarrito')?.addEventListener('click', limpiarCarrito);
+            document.getElementById('btnVentaContado')?.addEventListener('click', mostrarModalPago);
+            document.getElementById('btnVentaCredito')?.addEventListener('click', mostrarModalCredito);
+            document.getElementById('btnCotizacion')?.addEventListener('click', generarCotizacion);
+            document.getElementById('confirmarPago')?.addEventListener('click', confirmarVentaContado);
+            document.getElementById('confirmarCredito')?.addEventListener('click', confirmarVentaCredito);
+            document.getElementById('btnPagoSimple')?.addEventListener('click', () => setModoPago('simple'));
+            document.getElementById('btnPagoMixto')?.addEventListener('click', () => setModoPago('mixto'));
+            document.getElementById('montoSimple')?.addEventListener('input', () => actualizarPagoSimple());
+
+            document.querySelectorAll('#modoMixto .monto-pago-input').forEach(input => {
+                input.addEventListener('input', () => actualizarPagoMixto());
+            });
+
+            document.getElementById('numPagos')?.addEventListener('input', calcularMontoPorPago);
 
             document.querySelectorAll('.producto-card').forEach(card => {
                 card.addEventListener('click', async () => {
@@ -972,85 +995,102 @@
                         return;
                     }
                     const result = await agregarProducto(id, 1);
-                    if (result && result.success) {
-                        Swal.fire({
-                            title: '¡Agregado!',
-                            text: `${nombre} agregado al carrito`,
-                            icon: 'success',
-                            timer: 1000,
-                            showConfirmButton: false,
-                            position: 'top-end',
-                            toast: true
-                        });
+                    if (result?.success) {
+                        Swal.fire({ title: '¡Agregado!', text: `${nombre} agregado al carrito`, icon: 'success', timer: 1000, showConfirmButton: false, toast: true, position: 'top-end' });
                     }
                 });
             });
 
-            document.getElementById('limpiarCarrito')?.addEventListener('click', limpiarCarrito);
-            document.getElementById('btnVentaContado')?.addEventListener('click', mostrarModalPago);
-            document.getElementById('btnVentaCredito')?.addEventListener('click', mostrarModalCredito);
-            document.getElementById('btnCotizacion')?.addEventListener('click', generarCotizacion);
-            document.getElementById('confirmarPago')?.addEventListener('click', confirmarVentaContado);
-            document.getElementById('confirmarCredito')?.addEventListener('click', confirmarVentaCredito);
+            document.querySelectorAll('#modoMixto [data-requiere-referencia="1"]').forEach(card => {
+                card.querySelector('.referencia-input')?.classList.remove('hidden');
+            });
 
             document.addEventListener('DOMContentLoaded', () => {
                 cargarCarrito();
-                inicializarEventosPagos();
+                setModoPago('simple');
             });
 
             function escapeHtml(str) {
                 if (!str) return '';
                 return str.replace(/[&<>]/g, m => m === '&' ? '&amp;' : m === '<' ? '&lt;' : m === '>' ? '&gt;' : m);
             }
-            function calcularCambioPorMetodo(pagos, totalVenta) {
-                let totalPagado = pagos.reduce((sum, p) => sum + p.monto, 0);
-                let sobrante = Math.round((totalPagado - totalVenta) * 100) / 100;
 
-                if (sobrante <= 0) return { cambioDistribuido: [], sobrante: 0 };
-
-                // Ordenar pagos de mayor a menor para facilitar distribución del cambio
-                let pagosOrdenados = [...pagos].sort((a, b) => b.monto - a.monto);
-                let cambioRestante = sobrante;
-                let cambioDistribuido = [];
-
-                for (let pago of pagosOrdenados) {
-                    if (cambioRestante <= 0) break;
-
-                    let montoOriginal = pago.monto;
-                    let montoAjustado = montoOriginal;
-                    let cambioDeEsteMetodo = 0;
-
-                    // Intentar tomar el cambio de este método de pago
-                    if (montoOriginal >= cambioRestante) {
-                        cambioDeEsteMetodo = cambioRestante;
-                        montoAjustado = Math.round((montoOriginal - cambioRestante) * 100) / 100;
-                        cambioRestante = 0;
-                    } else {
-                        cambioDeEsteMetodo = montoOriginal;
-                        montoAjustado = 0;
-                        cambioRestante = Math.round((cambioRestante - montoOriginal) * 100) / 100;
-                    }
-
-                    if (cambioDeEsteMetodo > 0) {
-                        cambioDistribuido.push({
-                            forma_pago_id: pago.forma_pago_id,
-                            nombre: pago.nombre || formasPagoData.find(f => f.id == pago.forma_pago_id)?.nombre || 'Desconocido',
-                            monto_original: montoOriginal,
-                            monto_ajustado: montoAjustado,
-                            cambio: cambioDeEsteMetodo
-                        });
-                    }
-                }
-
-                return { cambioDistribuido, sobrante };
-            }
-            // ✅ Guardar caja seleccionada en localStorage
             function guardarCajaSeleccionada() {
                 const select = document.getElementById('cajaActivaSelect');
-                if (select) {
-                    localStorage.setItem('cajaActivaSeleccionada', select.value);
-                    console.log('🏦 Caja seleccionada:', select.value);
+                if (select) localStorage.setItem('cajaActivaSeleccionada', select.value);
+            }
+            async function mostrarConfirmacionVenta(pagos, totalVenta, subtotal, iva) {
+                // Calcular total pagado (suma de los pagos ajustados)
+                const totalPagado = pagos.reduce((sum, p) => sum + p.monto, 0);
+                const cambio = totalPagado - totalVenta;
+
+                // Crear HTML para el desglose
+                let formasPagoHtml = '';
+                for (let pago of pagos) {
+                    const forma = formasPagoData.find(f => f.id == pago.forma_pago_id);
+                    formasPagoHtml += `
+                            <div class="flex items-center justify-between py-2 border-b border-gray-100">
+                                <div class="flex items-center gap-2">
+                                    <span class="text-lg">${forma?.icono || '💰'}</span>
+                                    <span class="font-medium">${forma?.nombre || 'Forma de pago'}</span>
+                                </div>
+                                <span class="font-bold text-green-600">$${pago.monto.toFixed(2)}</span>
+                            </div>
+                        `;
                 }
+
+                const confirmHtml = `
+                        <div class="space-y-4">
+                            <div class="p-4 bg-gray-50 rounded-xl">
+                                <h4 class="mb-2 font-bold text-gray-700">📊 Resumen de la venta</h4>
+                                <div class="space-y-2">
+                                    <div class="flex justify-between">
+                                        <span class="text-gray-600">Subtotal:</span>
+                                        <span class="font-medium">$${subtotal.toFixed(2)}</span>
+                                    </div>
+                                    <div class="flex justify-between">
+                                        <span class="text-gray-600">IVA (16%):</span>
+                                        <span class="font-medium">$${iva.toFixed(2)}</span>
+                                    </div>
+                                    <div class="flex justify-between pt-2 border-t border-gray-200">
+                                        <span class="font-bold text-gray-800">Total a pagar:</span>
+                                        <span class="font-bold text-indigo-600">$${totalVenta.toFixed(2)}</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="p-4 bg-green-50 rounded-xl">
+                                <h4 class="mb-2 font-bold text-green-800">💵 Formas de pago</h4>
+                                <div class="space-y-1">
+                                    ${formasPagoHtml}
+                                    <div class="flex justify-between pt-2 mt-2 border-t border-green-200">
+                                        <span class="font-bold text-gray-800">Total pagado:</span>
+                                        <span class="font-bold text-green-600">$${totalPagado.toFixed(2)}</span>
+                                    </div>
+                                    ${cambio > 0 ? `
+                                    <div class="flex justify-between pt-2">
+                                        <span class="font-bold text-gray-800">💰 Cambio a devolver:</span>
+                                        <span class="font-bold text-orange-600">$${cambio.toFixed(2)}</span>
+                                    </div>
+                                    ` : ''}
+                                </div>
+                            </div>
+                        </div>
+                    `;
+
+                const { isConfirmed } = await Swal.fire({
+                    title: '✅ Confirmar venta',
+                    html: confirmHtml,
+                    icon: 'question',
+                    showCancelButton: true,
+                    confirmButtonText: '✅ Confirmar venta',
+                    cancelButtonText: 'Cancelar',
+                    confirmButtonColor: '#10b981',
+                    cancelButtonColor: '#6b7280',
+                    width: '500px'
+                });
+
+                return isConfirmed;
             }
         </script>
     @endpush
@@ -1090,21 +1130,5 @@
         .swal2-popup.swal2-responsive {
             max-width: 750px !important;
         }
-    }
-
-    /* Scroll suave para el contenido */
-    .swal2-html-container::-webkit-scrollbar {
-        width: 6px;
-        height: 6px;
-    }
-
-    .swal2-html-container::-webkit-scrollbar-track {
-        background: #f1f1f1;
-        border-radius: 10px;
-    }
-
-    .swal2-html-container::-webkit-scrollbar-thumb {
-        background: #cbd5e1;
-        border-radius: 10px;
     }
 </style>

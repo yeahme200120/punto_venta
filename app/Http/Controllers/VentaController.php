@@ -129,10 +129,7 @@ class VentaController extends Controller
                 ->orderBy('nombre')
                 ->get();
 
-            $formasPago = FormaPago::where('empresa_id', $empresaId)
-                ->where('activo', true)
-                ->orderBy('orden')
-                ->get();
+            $formasPago = FormaPago::getActivasPorEmpresa($empresaId);
 
             return view('ventas.index', compact('productos', 'categorias', 'clientes', 'formasPago', 'cajaAbierta', 'cajasActivas'));
 

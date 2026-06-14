@@ -653,8 +653,10 @@ class CajaController extends Controller
                 })
                 ->where('activo', true)
                 ->get();
+            // 🔥 Agregar formas de pago activas
+            $formasPago = FormaPago::getActivasPorEmpresa($empresaId);
 
-            return view('cajas.transferencias', compact('cajas'));
+            return view('cajas.transferencias', compact('cajas', 'formasPago'));
         } catch (\Exception $e) {
             Log::error('Error al cargar transferencias: ' . $e->getMessage());
             return back()->with('error', 'Error al cargar las transferencias.');
@@ -663,11 +665,20 @@ class CajaController extends Controller
 
     public function solicitarTransferencia(Request $request)
     {
+        // 🔥 Obtener formas de pago activas globalmente desde la base de datos
+        $formasPagoValidas = FormaPago::where('activo_global', true)->pluck('clave')->toArray();
+
+        // Si no hay formas de pago en BD, usar valores por defecto
+        if (empty($formasPagoValidas)) {
+            $formasPagoValidas = ['efectivo', 'tarjeta_debito', 'tarjeta_credito', 'vale', 'transferencia', 'cheque'];
+        }
+
         $validated = $request->validate([
             'caja_origen_id' => 'required|exists:cajas,id',
             'caja_destino_id' => 'required|exists:cajas,id|different:caja_origen_id',
             'monto' => 'required|numeric|min:0.01',
             'motivo' => 'required|string|max:500',
+            'forma_pago' => 'required|string|in:' . implode(',', $formasPagoValidas),
         ]);
 
         try {
@@ -676,7 +687,8 @@ class CajaController extends Controller
                 $validated['caja_destino_id'],
                 auth()->id(),
                 $validated['monto'],
-                $validated['motivo']
+                $validated['motivo'],
+                $validated['forma_pago']
             );
 
             return redirect()->route('cajas.autorizaciones')
@@ -706,23 +718,39 @@ class CajaController extends Controller
         }
     }
 
-    // ==================== REPORTES ====================
-
     public function reporteDia($aperturaId)
     {
         try {
             $empresaId = $this->empresaActivaId();
+            $user = auth()->user();
+
             $resumen = CajaService::resumenDia($aperturaId);
             $apertura = CajaApertura::with(['caja', 'usuario', 'movimientos', 'sucursal'])->findOrFail($aperturaId);
 
-            // Verificar que la apertura pertenezca a la empresa activa
             if ($apertura->empresa_id != $empresaId) {
                 return back()->with('error', 'No tienes permiso para ver este reporte.');
             }
 
+            // 🔥 Obtener todas las cajas abiertas para el selector (solo para Admin/Super Admin)
+            $todasAperturas = collect();
+            if ($user->hasRole('Super Admin') || $user->hasRole('Administrador')) {
+                $todasAperturas = CajaApertura::where('empresa_id', $empresaId)
+                    ->where('sucursal_id', $this->sucursalActivaId())
+                    ->where('estado', 'abierta')
+                    ->with(['caja', 'usuario'])
+                    ->orderBy('created_at', 'desc')
+                    ->get();
+            }
+
             $formasPago = FormaPago::getActivasPorEmpresa($empresaId);
 
-            return view('cajas.reporte-dia', compact('resumen', 'apertura', 'formasPago'));
+            // 🔥 Movimientos pendientes de autorización
+            $movimientosPendientes = CajaMovimiento::where('caja_apertura_id', $apertura->id)
+                ->where('requiere_autorizacion', true)
+                ->whereNull('autorizado_por')
+                ->get();
+
+            return view('cajas.reporte-dia', compact('resumen', 'apertura', 'formasPago', 'todasAperturas', 'movimientosPendientes'));
         } catch (\Exception $e) {
             Log::error('Error al generar reporte: ' . $e->getMessage());
             return back()->with('error', 'Error al generar el reporte: ' . $e->getMessage());
@@ -1302,7 +1330,9 @@ class CajaController extends Controller
 
         session(['caja_operacion_id' => $request->apertura_id]);
 
-        return redirect()->route('cajas.operaciones')
-            ->with('success', 'Caja cambiada correctamente.');
+         // 🔥 Obtener la URL de origen para redirigir de vuelta
+        $redirectUrl = $request->input('redirect', route('cajas.operaciones'));
+
+        return redirect($redirectUrl)->with('success', 'Caja cambiada correctamente.');
     }
 }

@@ -55,6 +55,7 @@
         <div>
             <form action="{{ route('cajas.cambiar') }}" method="POST" class="inline">
                 @csrf
+                <input type="hidden" name="redirect" value="{{ route('cajas.operaciones') }}">
                 <select name="apertura_id" onchange="this.form.submit()" class="px-3 py-2 border rounded-xl focus:ring-2 focus:ring-indigo-500">
                     <option value="">Seleccionar caja...</option>
                     @foreach($todasAperturas as $cajaOption)

@@ -10,6 +10,54 @@
 
 @section('content')
 <div class="space-y-6">
+    {{-- 🔥 INFORMACIÓN DE LA CAJA ACTUAL (SIEMPRE VISIBLE) --}}
+    @if(isset($cajaActual) && $cajaActual)
+    <div class="p-4 border border-indigo-200 shadow-sm bg-gradient-to-r from-indigo-50 to-cyan-50 rounded-xl">
+        <div class="flex flex-wrap items-center justify-between gap-4">
+            <div class="flex items-center gap-3">
+                <div class="flex items-center justify-center w-12 h-12 bg-indigo-100 rounded-full">
+                    <span class="text-2xl">🏦</span>
+                </div>
+                <div>
+                    <h3 class="text-lg font-bold text-slate-800">{{ $cajaActual->caja->nombre }}</h3>
+                    <p class="text-sm text-gray-500">Código: {{ $cajaActual->caja->codigo }} | Abierta por: {{ $cajaActual->usuario->name }}</p>
+                    <p class="text-xs text-gray-400">Fecha de apertura: {{ $cajaActual->created_at->format('d/m/Y H:i') }}</p>
+                </div>
+            </div>
+            <div class="text-right">
+                <p class="text-2xl font-bold text-green-600">${{ number_format($cajaActual->saldoActual() ?? 0, 2) }}</p>
+                <p class="text-xs text-gray-500">Saldo actual de la caja</p>
+            </div>
+        </div>
+    </div>
+    @endif
+
+    {{-- 🔥 SELECTOR DE CAJA PARA SUPER ADMIN Y ADMINISTRADOR --}}
+    @if((auth()->user()->hasRole('Super Admin') || auth()->user()->hasRole('Administrador')) && isset($todasAperturas) && $todasAperturas->count() > 1)
+    <div class="p-4 mb-6 border border-blue-200 bg-blue-50 rounded-xl">
+        <div class="flex flex-wrap items-center justify-between gap-4">
+            <div class="flex items-center gap-2">
+                <span class="text-lg">🔄</span>
+                <span class="font-medium text-gray-700">Cambiar a otra caja:</span>
+            </div>
+            <div>
+                <form action="{{ route('cajas.cambiar') }}" method="POST" class="inline">
+                    @csrf
+                    <input type="hidden" name="redirect" value="{{ route('dashboard.caja') }}">
+                    <select name="apertura_id" onchange="this.form.submit()" class="px-3 py-2 border rounded-xl focus:ring-2 focus:ring-indigo-500">
+                        <option value="">Seleccionar caja...</option>
+                        @foreach($todasAperturas as $cajaOption)
+                            <option value="{{ $cajaOption->id }}" {{ $cajaActual->id == $cajaOption->id ? 'selected' : '' }}>
+                                {{ $cajaOption->caja->nombre }} ({{ $cajaOption->caja->codigo }}) - {{ $cajaOption->usuario->name }}
+                            </option>
+                        @endforeach
+                    </select>
+                </form>
+            </div>
+        </div>
+    </div>
+    @endif
+
     {{-- Tarjetas KPI --}}
     <div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
         <!-- Ventas hoy -->
@@ -201,7 +249,7 @@
                 labels: formasPago,
                 datasets: [{
                     data: montosFormaPago,
-                    backgroundColor: ['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6']
+                    backgroundColor: ['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4']
                 }]
             },
             options: { responsive: true }

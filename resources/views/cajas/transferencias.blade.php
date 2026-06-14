@@ -42,7 +42,9 @@
                     <select name="caja_origen_id" id="caja_origen_id" required class="w-full px-4 py-3 border rounded-xl focus:ring-2 focus:ring-indigo-500">
                         <option value="">Seleccionar caja origen</option>
                         @foreach($cajas as $caja)
-                        <option value="{{ $caja->id }}">{{ $caja->nombre }} ({{ $caja->codigo }}) - ${{ number_format($caja->saldo_actual, 2) }}</option>
+                        <option value="{{ $caja->id }}" data-saldo="{{ $caja->saldo_actual }}">
+                            {{ $caja->nombre }} ({{ $caja->codigo }}) - ${{ number_format($caja->saldo_actual, 2) }}
+                        </option>
                         @endforeach
                     </select>
                 </div>
@@ -52,7 +54,9 @@
                     <select name="caja_destino_id" id="caja_destino_id" required class="w-full px-4 py-3 border rounded-xl focus:ring-2 focus:ring-indigo-500">
                         <option value="">Seleccionar caja destino</option>
                         @foreach($cajas as $caja)
-                        <option value="{{ $caja->id }}">{{ $caja->nombre }} ({{ $caja->codigo }}) - ${{ number_format($caja->saldo_actual, 2) }}</option>
+                        <option value="{{ $caja->id }}">
+                            {{ $caja->nombre }} ({{ $caja->codigo }}) - ${{ number_format($caja->saldo_actual, 2) }}
+                        </option>
                         @endforeach
                     </select>
                 </div>
@@ -68,6 +72,30 @@
                 <p id="saldo-disponible" class="mt-1 text-xs text-gray-500"></p>
             </div>
 
+            {{-- 🔥 NUEVO: Forma de pago --}}
+            <div>
+                <label class="block mb-2 text-sm font-medium text-gray-700">Forma de pago *</label>
+                <select name="forma_pago" id="forma_pago" required class="w-full px-4 py-3 border rounded-xl focus:ring-2 focus:ring-indigo-500">
+                    <option value="">Seleccionar forma de pago</option>
+                    @if(isset($formasPago) && $formasPago->count() > 0)
+                        @foreach($formasPago as $forma)
+                            <option value="{{ $forma->clave }}">
+                                {!! $forma->icono !!} {{ $forma->nombre }}
+                                @if($forma->requiere_referencia) - Requiere referencia @endif
+                            </option>
+                        @endforeach
+                    @else
+                        <option value="efectivo">💵 Efectivo</option>
+                        <option value="tarjeta_debito">💳 Tarjeta de Débito</option>
+                        <option value="tarjeta_credito">💎 Tarjeta de Crédito</option>
+                        <option value="vale">🎫 Vale</option>
+                        <option value="transferencia">🏦 Transferencia Bancaria</option>
+                        <option value="cheque">📄 Cheque</option>
+                    @endif
+                </select>
+                <p class="mt-1 text-xs text-gray-500">Selecciona cómo se está realizando físicamente la transferencia</p>
+            </div>
+
             <div>
                 <label class="block mb-2 text-sm font-medium text-gray-700">Motivo de la transferencia *</label>
                 <textarea name="motivo" rows="3" required class="w-full px-4 py-3 border rounded-xl focus:ring-2 focus:ring-indigo-500" placeholder="Ej: Traspaso de fondos para cambio de turno, Ajuste de saldos, etc."></textarea>
@@ -77,6 +105,10 @@
                 <p class="flex items-center gap-2 text-sm text-yellow-800">
                     <span>⚠️</span>
                     Las transferencias requieren autorización de un administrador. Una vez autorizada, los fondos serán transferidos automáticamente.
+                </p>
+                <p class="flex items-center gap-2 mt-2 text-xs text-yellow-700">
+                    <span>💡</span>
+                    La forma de pago seleccionada se registrará en los movimientos contables.
                 </p>
             </div>
 
@@ -129,6 +161,37 @@ document.getElementById('caja_destino_id').addEventListener('change', function()
             confirmButtonColor: '#4f46e5'
         });
         this.value = '';
+    }
+});
+
+// Validar monto antes de enviar
+document.querySelector('form').addEventListener('submit', function(e) {
+    const origenId = document.getElementById('caja_origen_id').value;
+    const monto = parseFloat(document.getElementById('monto').value);
+    const formaPago = document.getElementById('forma_pago').value;
+    
+    if (!origenId) {
+        e.preventDefault();
+        Swal.fire({ icon: 'warning', title: 'Selecciona caja origen', confirmButtonColor: '#4f46e5' });
+        return false;
+    }
+    
+    if (!formaPago) {
+        e.preventDefault();
+        Swal.fire({ icon: 'warning', title: 'Selecciona forma de pago', confirmButtonColor: '#4f46e5' });
+        return false;
+    }
+    
+    const caja = cajas.find(c => c.id == origenId);
+    if (caja && monto > caja.saldo_actual) {
+        e.preventDefault();
+        Swal.fire({
+            icon: 'error',
+            title: 'Saldo insuficiente',
+            text: `El monto solicitado ($${formatNumber(monto)}) supera el saldo disponible ($${formatNumber(caja.saldo_actual)})`,
+            confirmButtonColor: '#ef4444'
+        });
+        return false;
     }
 });
 </script>

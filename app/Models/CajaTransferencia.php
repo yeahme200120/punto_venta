@@ -17,6 +17,7 @@ class CajaTransferencia extends Model
         'autorizado_por',
         'monto',
         'motivo',
+        'forma_pago', 
         'estado',
         'autorizado_en'
     ];

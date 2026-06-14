@@ -4,26 +4,83 @@ namespace App\Http\Controllers;
 use App\Models\Caja;
 use App\Models\CajaApertura;
 use App\Models\CajaMovimiento;
+use App\Traits\ActivaTrait;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class ReporteCajaController extends Controller
 {
-    private function empresaActivaId()
+    use ActivaTrait;
+    /**
+     * Obtener la caja actual según el rol del usuario
+     */
+    private function getCajaActual()
     {
-        if (auth()->user()->hasRole('Super Admin')) {
-            return session('empresa_activa_id', auth()->user()->empresa_id);
+        $user = auth()->user();
+        $sucursalId = $this->sucursalActivaId();
+        $empresaId = $this->empresaActivaId();
+        $userId = auth()->id();
+
+        // Super Admin y Administrador: pueden tener una caja seleccionada en sesión
+        if ($user->hasRole('Super Admin') || $user->hasRole('Administrador')) {
+            $aperturaIdSession = session('caja_operacion_id');
+            if ($aperturaIdSession) {
+                $apertura = CajaApertura::with(['caja', 'usuario'])
+                    ->where('id', $aperturaIdSession)
+                    ->where('empresa_id', $empresaId)
+                    ->where('sucursal_id', $sucursalId)
+                    ->where('estado', 'abierta')
+                    ->first();
+                if ($apertura) {
+                    return $apertura;
+                }
+            }
+
+            // Si no hay seleccionada, obtener la primera caja abierta
+            $apertura = CajaApertura::with(['caja', 'usuario'])
+                ->where('empresa_id', $empresaId)
+                ->where('sucursal_id', $sucursalId)
+                ->where('estado', 'abierta')
+                ->first();
+
+            if ($apertura) {
+                session(['caja_operacion_id' => $apertura->id]);
+                return $apertura;
+            }
+
+            return null;
         }
-        return auth()->user()->empresa_id;
+
+        // Usuarios normales: solo su propia caja
+        return CajaApertura::with(['caja', 'usuario'])
+            ->where('empresa_id', $empresaId)
+            ->where('sucursal_id', $sucursalId)
+            ->where('user_id', $userId)
+            ->where('estado', 'abierta')
+            ->whereDate('fecha', today())
+            ->first();
     }
 
-    private function sucursalActivaId()
+    /**
+     * Obtener todas las cajas abiertas (para selectores de Admin/Super Admin)
+     */
+    private function getTodasAperturas()
     {
-        if (auth()->user()->hasRole('Super Admin')) {
-            return session('sucursal_activa_id');
+        $user = auth()->user();
+        $sucursalId = $this->sucursalActivaId();
+        $empresaId = $this->empresaActivaId();
+
+        if (!$user->hasRole('Super Admin') && !$user->hasRole('Administrador')) {
+            return collect();
         }
-        return auth()->user()->sucursal_id;
+
+        return CajaApertura::with(['caja', 'usuario'])
+            ->where('empresa_id', $empresaId)
+            ->where('sucursal_id', $sucursalId)
+            ->where('estado', 'abierta')
+            ->orderBy('created_at', 'desc')
+            ->get();
     }
 
     /**
@@ -63,8 +120,18 @@ class ReporteCajaController extends Controller
             $fechaInicio = $request->get('fecha_inicio', now()->startOfMonth()->format('Y-m-d'));
             $fechaFin = $request->get('fecha_fin', now()->endOfMonth()->format('Y-m-d'));
 
-            // ✅ Obtener IDs de cajas apertura según el rol
-            $cajaAperturaIds = $this->getCajaAperturaIds();
+            // 🔥 Obtener caja actual y todas las cajas
+            $cajaActual = $this->getCajaActual();
+            $todasAperturas = $this->getTodasAperturas();
+
+            // Si no hay caja actual, redirigir
+            if (!$cajaActual) {
+                return redirect()->route('cajas.apertura')
+                    ->with('error', 'No hay una caja abierta. Debes abrir una caja primero.');
+            }
+
+            // ✅ Obtener IDs de cajas apertura según el rol (pero respetando la caja seleccionada)
+            $cajaAperturaIds = [$cajaActual->id];
 
             $datos = $this->getDatosGraficas($empresaId, $sucursalId, $fechaInicio, $fechaFin, $cajaAperturaIds);
             $resumen = $this->getResumenGeneral($empresaId, $sucursalId, $fechaInicio, $fechaFin, $cajaAperturaIds);
@@ -89,10 +156,19 @@ class ReporteCajaController extends Controller
             }
 
             return view('reportes.caja-dashboard', compact(
-                'datos', 'resumen', 'topMovimientos', 'movimientosRecientes',
-                'fechaInicio', 'fechaFin',
-                'evolucionLabels', 'evolucionIngresos', 'evolucionEgresos',
-                'formaPagoLabels', 'formaPagoValues'
+                'datos',
+                'resumen',
+                'topMovimientos',
+                'movimientosRecientes',
+                'fechaInicio',
+                'fechaFin',
+                'evolucionLabels',
+                'evolucionIngresos',
+                'evolucionEgresos',
+                'formaPagoLabels',
+                'formaPagoValues',
+                'cajaActual',
+                'todasAperturas'  // 🔥 Pasar a la vista
             ));
         } catch (\Exception $e) {
             Log::error('Error en dashboard de caja: ' . $e->getMessage());
@@ -120,7 +196,8 @@ class ReporteCajaController extends Controller
                 $q->whereHas('cajaApertura', function ($sub) use ($empresaId, $sucursalId) {
                     $sub->whereHas('caja', function ($c) use ($empresaId, $sucursalId) {
                         $c->where('empresa_id', $empresaId);
-                        if ($sucursalId) $c->where('sucursal_id', $sucursalId);
+                        if ($sucursalId)
+                            $c->where('sucursal_id', $sucursalId);
                     });
                 });
             }
